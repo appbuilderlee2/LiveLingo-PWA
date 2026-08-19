@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+    <meta name="theme-color" content="#071321" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="LiveLingo" />
+    <meta name="description" content="即時將英文語音變成繁體中文字幕，課堂紀錄只存在本機。" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>LiveLingo 即時字幕</title>
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <header class="topbar">
+        <button class="brand" id="brandButton" aria-label="返回即時字幕">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>LiveLingo</span>
+        </button>
+        <nav class="top-actions" aria-label="主要選單">
+          <button class="icon-button" id="historyButton" aria-label="課堂紀錄" title="課堂紀錄">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg>
+          </button>
+          <button class="icon-button" id="settingsButton" aria-label="設定" title="設定">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.38a1.7 1.7 0 0 0-1 .62 1.7 1.7 0 0 0-.38 1v.08h-4V21a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.14 15a1.7 1.7 0 0 0-.62-1 1.7 1.7 0 0 0-1-.38h-.08v-4h.08A1.7 1.7 0 0 0 4.12 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.5 4.12a1.7 1.7 0 0 0 1-.62 1.7 1.7 0 0 0 .38-1v-.08h4v.08a1.7 1.7 0 0 0 1.1 1.6 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.38 8.5c.16.38.38.72.62 1 .28.3.62.4 1 .4h.08v4H21a1.7 1.7 0 0 0-1.6 1.1Z"/></svg>
+          </button>
+        </nav>
+      </header>
+
+      <main class="main-view" id="mainView">
+        <section class="status-row" aria-live="polite">
+          <div id="liveStatus" class="live-status idle"><span class="status-dot"></span><span id="statusLabel">READY</span></div>
+          <span class="status-divider"></span>
+          <time id="elapsedTime">00:00:00</time>
+          <button id="finishButton" class="finish-button" hidden>完成課堂</button>
+        </section>
+
+        <section class="subtitle-stage" id="subtitleStage" aria-live="polite" aria-atomic="true">
+          <p class="chinese-subtitle placeholder" id="chineseSubtitle">撳下面咪高峰，開始即時字幕</p>
+          <div class="sound-rule" aria-hidden="true"><span></span><b><i></i><i></i><i></i><i></i><i></i></b><span></span></div>
+          <p class="english-subtitle placeholder" id="englishSubtitle">Tap the microphone to start English recognition.</p>
+          <p class="interim-text" id="interimText"></p>
+        </section>
+
+        <section class="transcript-section" aria-label="字幕紀錄">
+          <div class="transcript-empty" id="transcriptEmpty">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18v3M8 21h8M8 11a4 4 0 0 0 8 0V6a4 4 0 1 0-8 0v5Z"/><path d="M5 11a7 7 0 0 0 14 0"/></svg>
+            <p>英文會顯示喺度，翻譯完成後會自動加入繁中字幕。</p>
+          </div>
+          <ol class="transcript-list" id="transcriptList"></ol>
+        </section>
+      </main>
+
+      <aside class="control-dock" aria-label="字幕控制">
+        <button class="utility-control" id="largeModeButton" aria-pressed="false">
+          <span class="utility-icon text-icon" aria-hidden="true">文</span>
+          <span>中文大字幕</span>
+        </button>
+        <button class="mic-control" id="micButton" aria-label="開始聆聽">
+          <span class="mic-ring">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11a4 4 0 0 0 8 0V6a4 4 0 1 0-8 0v5Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>
+          </span>
+          <strong id="micLabel">Start Listening</strong>
+        </button>
+        <button class="utility-control" id="copyButton">
+          <span class="utility-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><rect x="8" y="7" width="11" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3"/></svg>
+          </span>
+          <span>複製內容</span>
+        </button>
+        <p class="privacy-note"><span aria-hidden="true">▣</span> 不儲存錄音 · 無帳戶 · 無月費</p>
+      </aside>
+    </div>
+
+    <dialog id="historyDialog" class="sheet-dialog">
+      <div class="sheet-header"><div><p>本機儲存</p><h2>課堂紀錄</h2></div><button class="close-button" data-close="historyDialog" aria-label="關閉">×</button></div>
+      <div id="historyList" class="history-list"></div>
+      <button id="clearHistoryButton" class="danger-text">清除所有紀錄</button>
+    </dialog>
+
+    <dialog id="settingsDialog" class="sheet-dialog">
+      <div class="sheet-header"><div><p>LiveLingo</p><h2>設定與安裝</h2></div><button class="close-button" data-close="settingsDialog" aria-label="關閉">×</button></div>
+      <section class="settings-group">
+        <label class="setting-row"><span><strong>自動捲動</strong><small>新字幕出現時移至最底</small></span><input id="autoScrollToggle" type="checkbox" checked /></label>
+        <label class="setting-row"><span><strong>翻譯顯示</strong><small>英文 → 繁體中文</small></span><input id="translationToggle" type="checkbox" checked /></label>
+      </section>
+      <section class="install-card">
+        <h3>加入 iPhone 主畫面</h3>
+        <p>用 Safari 開啟網站，撳「分享」<span aria-hidden="true">⇧</span>，再揀「加入主畫面」。首次使用要允許咪高峰。</p>
+      </section>
+      <section class="privacy-card">
+        <h3>私隱說明</h3>
+        <p>LiveLingo 不會儲存錄音；文字紀錄只存在此瀏覽器。語音辨識由你的瀏覽器／裝置服務處理，英文文字會傳送到翻譯服務。</p>
+      </section>
+    </dialog>
+
+    <dialog id="lessonDialog" class="sheet-dialog lesson-dialog">
+      <div class="sheet-header"><div><p id="lessonMeta">課堂紀錄</p><h2 id="lessonTitle">課堂</h2></div><button class="close-button" data-close="lessonDialog" aria-label="關閉">×</button></div>
+      <div id="lessonContent" class="lesson-content"></div>
+      <button id="copyLessonButton" class="primary-wide">複製呢堂內容</button>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
