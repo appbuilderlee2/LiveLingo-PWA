@@ -2,16 +2,25 @@
 (function () {
   'use strict';
 
-  const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin';
+  const MODELS = {
+    'tiny-en-q5_1': {
+      name: 'tiny.en Q5_1', sizeMb: 31, dbKey: 'tiny.en-q5_1',
+      url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin'
+    },
+    'base-en-q5_1': {
+      name: 'base.en Q5_1', sizeMb: 57, dbKey: 'base.en-q5_1',
+      url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q5_1.bin'
+    }
+  };
   const DB_NAME = 'livelingo-whisper';
   const DB_VERSION = 1;
   const STORE_NAME = 'models';
-  const MODEL_KEY = 'tiny.en-q5_1';
   const SAMPLE_RATE = 16000;
   const CHUNK_SECONDS = 5;
 
   let runtimeReady = false;
-  let modelReady = false;
+  let selectedModel = 'tiny-en-q5_1';
+  let loadedModel = null;
   let instance = null;
   let stream = null;
   let audioContext = null;
@@ -55,66 +64,78 @@
     });
   }
 
-  async function getStoredModel() {
+  async function getStoredModel(modelKey = selectedModel) {
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
-      const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(MODEL_KEY);
+      const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(MODELS[modelKey].dbKey);
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error);
     }).finally(() => db.close());
   }
 
-  async function storeModel(buffer) {
+  async function storeModel(buffer, modelKey = selectedModel) {
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
-      transaction.objectStore(STORE_NAME).put(buffer, MODEL_KEY);
+      transaction.objectStore(STORE_NAME).put(buffer, MODELS[modelKey].dbKey);
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
     }).finally(() => db.close());
   }
 
-  async function deleteModel() {
+  function unloadModel() {
     stop();
+    if (instance) {
+      try { window.Module.free(instance); } catch (_) {}
+      instance = null;
+    }
+    loadedModel = null;
+    try { window.Module.FS_unlink('whisper.bin'); } catch (_) {}
+  }
+
+  async function deleteModel(modelKey = selectedModel) {
+    if (modelKey === loadedModel) unloadModel();
     const db = await openDatabase();
     await new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
-      transaction.objectStore(STORE_NAME).delete(MODEL_KEY);
+      transaction.objectStore(STORE_NAME).delete(MODELS[modelKey].dbKey);
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
     });
     db.close();
-    modelReady = false;
-    try { window.Module.FS_unlink('whisper.bin'); } catch (_) {}
     emitStatus('not-installed');
   }
 
-  async function hasModel() {
-    try { return Boolean(await getStoredModel()); } catch (_) { return false; }
+  async function hasModel(modelKey = selectedModel) {
+    try { return Boolean(await getStoredModel(modelKey)); } catch (_) { return false; }
   }
 
-  function storeInWasm(buffer) {
+  function storeInWasm(buffer, modelKey = selectedModel) {
+    if (loadedModel && loadedModel !== modelKey) unloadModel();
     try { window.Module.FS_unlink('whisper.bin'); } catch (_) {}
     const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
     window.Module.FS_createDataFile('/', 'whisper.bin', bytes, true, true);
-    modelReady = true;
+    loadedModel = modelKey;
     emitStatus('ready');
   }
 
   async function ensureModel() {
     await runtimePromise;
-    if (modelReady) return true;
-    const cached = await getStoredModel();
+    if (loadedModel === selectedModel) return true;
+    if (loadedModel) unloadModel();
+    const cached = await getStoredModel(selectedModel);
     if (!cached) return false;
     emitStatus('loading-model', '正在載入本機模型…');
-    storeInWasm(cached);
+    storeInWasm(cached, selectedModel);
     return true;
   }
 
   async function downloadModel(onProgress) {
     await runtimePromise;
+    const modelKey = selectedModel;
+    const modelInfo = MODELS[modelKey];
     emitStatus('downloading');
-    const response = await fetch(MODEL_URL);
+    const response = await fetch(modelInfo.url);
     if (!response.ok || !response.body) throw new Error(`model download failed (${response.status})`);
     const total = Number(response.headers.get('content-length')) || 0;
     const reader = response.body.getReader();
@@ -130,8 +151,8 @@
     const model = new Uint8Array(received);
     let offset = 0;
     chunks.forEach((chunk) => { model.set(chunk, offset); offset += chunk.length; });
-    await storeModel(model);
-    storeInWasm(model);
+    await storeModel(model, modelKey);
+    storeInWasm(model, modelKey);
     onProgress?.(1, received, total);
     return true;
   }
@@ -221,18 +242,27 @@
     audioContext = null;
     pcmChunks = [];
     pcmLength = 0;
-    emitStatus(modelReady ? 'ready' : 'not-installed');
+    emitStatus(loadedModel ? 'ready' : 'not-installed');
+  }
+
+  function setModel(modelKey) {
+    if (!MODELS[modelKey]) throw new Error('Unknown Whisper model');
+    if (selectedModel !== modelKey && loadedModel && loadedModel !== modelKey) unloadModel();
+    selectedModel = modelKey;
   }
 
   window.LiveLingoWhisper = {
     get runtimeReady() { return runtimeReady; },
-    get modelReady() { return modelReady; },
+    get modelReady() { return loadedModel === selectedModel; },
+    get selectedModel() { return selectedModel; },
+    get models() { return MODELS; },
     setTranscriptHandler(handler) { transcriptHandler = handler; },
     setStatusHandler(handler) { statusHandler = handler; },
     hasModel,
     ensureModel,
     downloadModel,
     deleteModel,
+    setModel,
     start,
     stop
   };

@@ -1,6 +1,10 @@
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const whisper = window.LiveLingoWhisper;
+const WHISPER_MODELS = whisper?.models || {
+  'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
+  'base-en-q5_1': { name: 'base.en Q5_1', sizeMb: 57 }
+};
 const RECOGNITION_MODES = {
   realtime: { label: '即時', needsWhisper: false },
   smart: { label: '智能校正', needsWhisper: true },
@@ -17,6 +21,7 @@ const elements = {
   settingsDialog: el('settingsDialog'), lessonDialog: el('lessonDialog'), historyList: el('historyList'), toast: el('toast'),
   whisperModelCard: el('whisperModelCard'), whisperStatus: el('whisperStatus'), whisperProgress: el('whisperProgress'),
   whisperProgressBar: el('whisperProgressBar'), whisperCompatibility: el('whisperCompatibility'),
+  whisperModelName: el('whisperModelName'), whisperModelDetail: el('whisperModelDetail'),
   downloadWhisperButton: el('downloadWhisperButton'), deleteWhisperButton: el('deleteWhisperButton'), activeModeBadge: el('activeModeBadge')
 };
 
@@ -35,6 +40,7 @@ const state = {
   interimToken: 0,
   lastInterim: '',
   recognitionMode: localStorage.getItem('ll-recognition-mode') || 'realtime',
+  whisperModel: localStorage.getItem('ll-whisper-model') || 'tiny-en-q5_1',
   whisperInstalled: false,
   whisperStatus: 'not-installed',
   autoScroll: JSON.parse(localStorage.getItem('ll-auto-scroll') ?? 'true'),
@@ -523,6 +529,10 @@ function updateRecognitionModeUI() {
 
 function updateWhisperUI(status = state.whisperStatus, detail = '') {
   state.whisperStatus = status;
+  const model = WHISPER_MODELS[state.whisperModel];
+  elements.whisperModelName.textContent = `Whisper ${model.name}`;
+  elements.whisperModelDetail.textContent = `英文模型 · 約 ${model.sizeMb} MB`;
+  elements.downloadWhisperButton.textContent = `下載模型（${model.sizeMb} MB）`;
   const labels = {
     'not-installed': '未下載', downloading: '下載中', 'loading-model': '載入中', ready: '已準備',
     listening: '聆聽中', transcribing: '校正中', error: '發生錯誤', runtime: '啟動中'
@@ -547,7 +557,11 @@ function updateWhisperUI(status = state.whisperStatus, detail = '') {
 
 async function refreshWhisperModelState() {
   if (!whisper) return;
-  state.whisperInstalled = await whisper.hasModel();
+  if (!WHISPER_MODELS[state.whisperModel]) state.whisperModel = 'tiny-en-q5_1';
+  whisper.setModel(state.whisperModel);
+  const input = document.querySelector(`input[name="whisperModel"][value="${state.whisperModel}"]`);
+  if (input) input.checked = true;
+  state.whisperInstalled = await whisper.hasModel(state.whisperModel);
   updateWhisperUI(state.whisperInstalled ? 'ready' : 'not-installed');
 }
 
@@ -576,12 +590,11 @@ async function downloadWhisperModel() {
 }
 
 async function deleteWhisperModel() {
-  if (!confirm('確定刪除 31 MB Whisper 模型？之後使用時需要重新下載。')) return;
-  await whisper.deleteModel();
+  const model = WHISPER_MODELS[state.whisperModel];
+  if (!confirm(`確定刪除 ${model.sizeMb} MB ${model.name} 模型？之後使用時需要重新下載。`)) return;
+  await whisper.deleteModel(state.whisperModel);
   state.whisperInstalled = false;
-  state.recognitionMode = 'realtime';
-  localStorage.setItem('ll-recognition-mode', state.recognitionMode);
-  updateRecognitionModeUI();
+  updateWhisperUI('not-installed');
   showToast('Whisper 模型已刪除');
 }
 
@@ -624,7 +637,16 @@ document.querySelectorAll('input[name="recognitionMode"]').forEach((input) => in
   state.recognitionMode = event.target.value;
   localStorage.setItem('ll-recognition-mode', state.recognitionMode);
   updateRecognitionModeUI();
-  if (RECOGNITION_MODES[state.recognitionMode].needsWhisper && !state.whisperInstalled) showToast('首次使用要下載 31 MB 模型');
+  if (RECOGNITION_MODES[state.recognitionMode].needsWhisper && !state.whisperInstalled) showToast(`首次使用要下載 ${WHISPER_MODELS[state.whisperModel].sizeMb} MB 模型`);
+}));
+document.querySelectorAll('input[name="whisperModel"]').forEach((input) => input.addEventListener('change', async (event) => {
+  if (state.isListening) pauseListening(true);
+  state.whisperModel = event.target.value;
+  localStorage.setItem('ll-whisper-model', state.whisperModel);
+  whisper.setModel(state.whisperModel);
+  state.whisperInstalled = await whisper.hasModel(state.whisperModel);
+  updateWhisperUI(state.whisperInstalled ? 'ready' : 'not-installed');
+  showToast(state.whisperInstalled ? `${WHISPER_MODELS[state.whisperModel].name} 已準備` : `需要下載 ${WHISPER_MODELS[state.whisperModel].sizeMb} MB 模型`);
 }));
 elements.downloadWhisperButton.addEventListener('click', downloadWhisperModel);
 elements.deleteWhisperButton.addEventListener('click', deleteWhisperModel);

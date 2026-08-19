@@ -165,6 +165,14 @@ button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .mode-check { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid #43536b; border-radius: 50%; color: transparent; font-size: 13px; }
 .mode-option:has(input:checked) .mode-check { border-color: var(--accent); background: var(--accent); color: white; }
 .model-card { margin-top: 14px; padding: 15px; border-radius: 15px; background: #091523; border: 1px solid var(--line); }
+.model-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+.model-picker label { position: relative; cursor: pointer; }
+.model-picker input { position: absolute; opacity: 0; pointer-events: none; }
+.model-picker span { display: block; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.model-picker strong, .model-picker small { display: block; }
+.model-picker small { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.model-picker label:has(input:checked) span { border-color: var(--accent); background: rgba(255,91,84,.1); }
+.model-picker label:has(input:checked) strong { color: #ffd0cd; }
 .model-status-row strong, .model-status-row small { display: block; }
 .model-status-row small { margin-top: 3px; color: var(--muted); font-size: 12px; }
 .model-status { flex: none; color: #f2ba69; font-size: 12px; font-weight: 750; }

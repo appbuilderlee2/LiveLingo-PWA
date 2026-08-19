@@ -1,6 +1,6 @@
 # LiveLingo PWA
 
-Current app version: **v1.5.0**
+Current app version: **v1.6.0**
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
@@ -24,7 +24,7 @@ Open `http://localhost:4173`.
 
 - Speech recognition uses the browser Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`).
 - Recognition modes include Web Speech, Web Speech with local Whisper correction, and local Whisper-only recognition.
-- Whisper loads the official whisper.cpp WebAssembly stream runtime and downloads the quantized `tiny.en Q5_1` model (about 31 MB) on demand. The service worker caches the runtime and IndexedDB stores the model for later offline use.
+- Whisper loads the official whisper.cpp WebAssembly stream runtime. Users can download `tiny.en Q5_1` (about 31 MB, faster) or `base.en Q5_1` (about 57 MB, more accurate) on demand. The service worker caches the runtime and IndexedDB stores each model separately for later offline use.
 - Translation uses the public Google Translate web endpoint and therefore needs an internet connection.
 - Audio is never written by this app. Transcripts and lesson history are kept in browser local storage.
 - iPhone users should open the deployed HTTPS site in Safari and choose Share → Add to Home Screen.
