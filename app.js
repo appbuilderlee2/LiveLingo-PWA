@@ -20,6 +20,7 @@ const state = {
   timer: null,
   segments: [],
   currentLessonId: null,
+  pendingExport: null,
   interimTimer: null,
   interimToken: 0,
   lastInterim: '',
@@ -320,6 +321,37 @@ async function exportLesson(segments = state.segments, options = {}) {
   }
 }
 
+function openExportOptions(segments = state.segments, options = {}) {
+  if (!segments.length) { showToast('暫時未有課堂內容可以輸出'); return; }
+  state.pendingExport = { segments: [...segments], options: { ...options } };
+  el('exportDialog').showModal();
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character]));
+}
+
+function pdfDocumentHtml(segments, options = {}) {
+  const createdAt = new Date(options.createdAt || Date.now());
+  const title = options.title || 'LiveLingo 課堂內容';
+  const dateLabel = new Intl.DateTimeFormat('zh-HK', { dateStyle: 'long', timeStyle: 'short' }).format(createdAt);
+  const rows = segments.map((segment) => `<section><time>${escapeHtml(formatClock(segment.atMs).slice(3))}</time><div><p class="zh">${escapeHtml(segment.zh)}</p><p class="en">${escapeHtml(segment.en)}</p></div></section>`).join('');
+  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><style>@page{size:A4;margin:18mm}*{box-sizing:border-box}body{margin:0;color:#101828;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}header{padding-bottom:18px;border-bottom:2px solid #ff5b54}h1{margin:0;font-size:26px}header p{margin:7px 0 0;color:#667085}main{margin-top:8px}section{display:grid;grid-template-columns:62px 1fr;gap:14px;padding:15px 0;border-bottom:1px solid #e4e7ec;break-inside:avoid}time{padding-top:4px;color:#ff5b54;font-size:12px;font-variant-numeric:tabular-nums}p{margin:0;line-height:1.5}.zh{font-size:17px;font-weight:650}.en{margin-top:5px;color:#667085;font-size:14px}footer{margin-top:22px;color:#98a2b3;font-size:11px;text-align:center}@media print{button{display:none}}</style></head><body><header><h1>${escapeHtml(title)}</h1><p>${escapeHtml(dateLabel)} · ${segments.length} 段字幕</p></header><main>${rows}</main><footer>Exported from LiveLingo</footer></body></html>`;
+}
+
+function exportPdf(segments = state.segments, options = {}) {
+  if (!segments.length) { showToast('暫時未有課堂內容可以輸出'); return; }
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) { showToast('請允許彈出式視窗以輸出 PDF'); return; }
+  printWindow.document.open();
+  printWindow.document.write(pdfDocumentHtml(segments, options));
+  printWindow.document.close();
+  setTimeout(() => {
+    printWindow.focus();
+    printWindow.print();
+  }, 350);
+}
+
 async function copyText(text, success = '已複製字幕內容') {
   if (!text) { showToast('暫時未有字幕可以複製'); return; }
   try { await navigator.clipboard.writeText(text); showToast(success); }
@@ -385,7 +417,7 @@ function openLesson(lesson) {
     el('lessonContent').appendChild(div);
   });
   el('copyLessonButton').onclick = () => copyText(transcriptText(lesson.segments));
-  el('exportLessonButton').onclick = () => exportLesson(lesson.segments, { createdAt: lesson.createdAt, title: lesson.title });
+  el('exportLessonButton').onclick = () => openExportOptions(lesson.segments, { createdAt: lesson.createdAt, title: lesson.title });
   elements.lessonDialog.showModal();
 }
 
@@ -394,7 +426,17 @@ elements.micButton.addEventListener('click', () => {
 });
 elements.finishButton.addEventListener('click', finishLesson);
 elements.copyButton.addEventListener('click', () => copyText(transcriptText()));
-elements.exportButton.addEventListener('click', () => exportLesson());
+elements.exportButton.addEventListener('click', () => openExportOptions());
+el('exportTxtButton').addEventListener('click', () => {
+  const pending = state.pendingExport;
+  el('exportDialog').close();
+  if (pending) exportLesson(pending.segments, pending.options);
+});
+el('exportPdfButton').addEventListener('click', () => {
+  const pending = state.pendingExport;
+  el('exportDialog').close();
+  if (pending) exportPdf(pending.segments, pending.options);
+});
 elements.largeModeButton.addEventListener('click', () => {
   const enabled = !document.body.classList.contains('large-mode');
   document.body.classList.toggle('large-mode', enabled);
