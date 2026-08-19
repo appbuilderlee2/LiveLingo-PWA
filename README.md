@@ -4,6 +4,8 @@ Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
 Interim speech is translated after a short debounce, so Traditional Chinese appears before the browser finalizes each English sentence.
 
+Current and saved lessons can be exported as timestamped UTF-8 text files through the iOS share sheet or a browser download fallback.
+
 ## Run locally
 
 Serve this directory over HTTPS (required for microphone access), or use localhost during development:
