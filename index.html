@@ -72,6 +72,12 @@
           </span>
           <span>複製內容</span>
         </button>
+        <button class="utility-control" id="exportButton">
+          <span class="utility-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
+          </span>
+          <span>輸出課堂</span>
+        </button>
         <p class="privacy-note"><span aria-hidden="true">▣</span> 不儲存錄音 · 無帳戶 · 無月費</p>
       </aside>
     </div>
@@ -102,6 +108,7 @@
       <div class="sheet-header"><div><p id="lessonMeta">課堂紀錄</p><h2 id="lessonTitle">課堂</h2></div><button class="close-button" data-close="lessonDialog" aria-label="關閉">×</button></div>
       <div id="lessonContent" class="lesson-content"></div>
       <button id="copyLessonButton" class="primary-wide">複製呢堂內容</button>
+      <button id="exportLessonButton" class="secondary-wide">輸出課堂檔案</button>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
