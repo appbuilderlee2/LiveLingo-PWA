@@ -6,6 +6,8 @@ Interim speech is translated after a short debounce, so Traditional Chinese appe
 
 Current and saved lessons can be exported as timestamped UTF-8 text files through the iOS share sheet or a browser download fallback.
 
+Lessons can also be rendered as a print-ready A4 document. On iPhone, use the print preview share action to save the result as a PDF file.
+
 ## Run locally
 
 Serve this directory over HTTPS (required for microphone access), or use localhost during development:
