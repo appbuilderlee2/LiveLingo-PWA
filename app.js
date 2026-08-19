@@ -1,5 +1,5 @@
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.7.0';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -9,6 +9,10 @@ const RECOGNITION_MODES = {
   realtime: { label: '即時', needsWhisper: false },
   smart: { label: '智能校正', needsWhisper: true },
   offline: { label: '離線辨識', needsWhisper: true }
+};
+const LANGUAGE_DIRECTIONS = {
+  'en-zh': { speechLang: 'en-AU', source: 'en', target: 'zh-TW', label: '英文 → 繁體中文' },
+  'zh-en': { speechLang: 'zh-HK', source: 'zh-TW', target: 'en', label: '中文 → 英文' }
 };
 
 const el = (id) => document.getElementById(id);
@@ -23,7 +27,8 @@ const elements = {
   whisperProgressBar: el('whisperProgressBar'), whisperCompatibility: el('whisperCompatibility'),
   whisperProgressText: el('whisperProgressText'),
   whisperModelName: el('whisperModelName'), whisperModelDetail: el('whisperModelDetail'),
-  downloadWhisperButton: el('downloadWhisperButton'), deleteWhisperButton: el('deleteWhisperButton'), activeModeBadge: el('activeModeBadge')
+  downloadWhisperButton: el('downloadWhisperButton'), deleteWhisperButton: el('deleteWhisperButton'), activeModeBadge: el('activeModeBadge'),
+  translationDirectionLabel: el('translationDirectionLabel'), languageDirectionNote: el('languageDirectionNote'), largeModeLabel: el('largeModeLabel')
 };
 
 const state = {
@@ -41,6 +46,7 @@ const state = {
   interimToken: 0,
   lastInterim: '',
   recognitionMode: localStorage.getItem('ll-recognition-mode') || 'realtime',
+  languageDirection: localStorage.getItem('ll-language-direction') || 'en-zh',
   whisperModel: localStorage.getItem('ll-whisper-model') || 'tiny-en-q5_1',
   whisperInstalled: false,
   whisperStatus: 'not-installed',
@@ -73,6 +79,18 @@ function showToast(message) {
   showToast.timer = setTimeout(() => elements.toast.classList.remove('show'), 2200);
 }
 
+function setSubtitlePlaceholders() {
+  if (state.languageDirection === 'zh-en') {
+    elements.englishSubtitle.textContent = 'Tap the microphone to translate Chinese into English.';
+    elements.chineseSubtitle.textContent = '撳下面咪高峰，開始中文語音辨識';
+  } else {
+    elements.chineseSubtitle.textContent = '撳下面咪高峰，開始即時字幕';
+    elements.englishSubtitle.textContent = 'Tap the microphone to start English recognition.';
+  }
+  elements.chineseSubtitle.classList.add('placeholder');
+  elements.englishSubtitle.classList.add('placeholder');
+}
+
 function setVisualState(mode) {
   elements.app.classList.toggle('listening', mode === 'listening');
   elements.app.classList.toggle('paused', mode === 'paused');
@@ -86,7 +104,7 @@ function setVisualState(mode) {
 function createRecognition() {
   if (!SpeechRecognition) return null;
   const recognition = new SpeechRecognition();
-  recognition.lang = 'en-AU';
+  recognition.lang = LANGUAGE_DIRECTIONS[state.languageDirection].speechLang;
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
@@ -122,8 +140,10 @@ function createRecognition() {
   return recognition;
 }
 
-function punctuate(text) {
+function punctuate(text, direction = state.languageDirection) {
   const clean = text.trim().replace(/\s+/g, ' ');
+  if (!clean) return '';
+  if (direction === 'zh-en') return /[。！？!?]$/.test(clean) ? clean : `${clean}。`;
   return /[.!?]$/.test(clean) ? clean : `${clean}.`;
 }
 
@@ -194,10 +214,7 @@ function resetLesson() {
   elements.elapsedTime.textContent = '00:00:00';
   elements.transcriptList.innerHTML = '';
   elements.transcriptEmpty.hidden = false;
-  elements.chineseSubtitle.textContent = '撳下面咪高峰，開始即時字幕';
-  elements.englishSubtitle.textContent = 'Tap the microphone to start English recognition.';
-  elements.chineseSubtitle.classList.add('placeholder');
-  elements.englishSubtitle.classList.add('placeholder');
+  setSubtitlePlaceholders();
   setVisualState('idle');
 }
 
@@ -209,7 +226,7 @@ function finishLesson() {
     id: state.currentLessonId,
     createdAt: new Date().toISOString(),
     durationMs: lessonElapsed(),
-    title: state.segments[0]?.en.slice(0, 48) || 'English lesson',
+    title: (state.segments[0]?.en || state.segments[0]?.zh || 'LiveLingo lesson').slice(0, 48),
     segments: state.segments
   };
   const existing = lessons.findIndex((item) => item.id === lesson.id);
@@ -223,35 +240,40 @@ async function addSegment(rawText, source = 'web') {
   state.interimToken += 1;
   state.lastInterim = '';
   clearTimeout(state.interimTimer);
-  const en = punctuate(rawText);
-  const duplicate = state.segments.at(-1)?.en === en;
-  if (!en || duplicate) return;
-  const segment = { id: `${Date.now()}-${state.segments.length}`, atMs: lessonElapsed(), en, zh: '', translating: state.translate, source, corrected: false, translationToken: 0 };
+  const direction = state.languageDirection;
+  const sourceText = punctuate(rawText, direction);
+  const sourceField = direction === 'en-zh' ? 'en' : 'zh';
+  const duplicate = state.segments.at(-1)?.[sourceField] === sourceText;
+  if (!sourceText || duplicate) return;
+  const segment = {
+    id: `${Date.now()}-${state.segments.length}`, atMs: lessonElapsed(), en: direction === 'en-zh' ? sourceText : '',
+    zh: direction === 'zh-en' ? sourceText : '', direction, translating: state.translate, source, corrected: false, translationToken: 0
+  };
   state.segments.push(segment);
   renderSegment(segment);
   updateStage(segment);
   persistDraft();
   if (state.translate) {
     const token = ++segment.translationToken;
-    const translated = await translateText(en);
+    const translated = await translateText(sourceText, direction);
     if (token !== segment.translationToken) return;
-    segment.zh = translated;
+    if (direction === 'en-zh') segment.zh = translated; else segment.en = translated;
     segment.translating = false;
     updateSegment(segment);
     updateStage(segment);
     persistDraft();
   } else {
-    segment.zh = en;
     segment.translating = false;
     updateSegment(segment);
   }
 }
 
 async function correctRecentWithWhisper(rawText) {
-  const en = punctuate(rawText);
+  if (state.languageDirection !== 'en-zh') return;
+  const en = punctuate(rawText, 'en-zh');
   if (!en) return;
   const now = lessonElapsed();
-  const candidates = state.segments.filter((segment) => !segment.corrected && segment.source === 'web' && segment.atMs >= Math.max(0, now - 10000));
+  const candidates = state.segments.filter((segment) => !segment.corrected && segment.source === 'web' && (segment.direction || 'en-zh') === 'en-zh' && segment.atMs >= Math.max(0, now - 10000));
   if (!candidates.length) {
     await addSegment(en, 'whisper');
     return;
@@ -262,8 +284,9 @@ async function correctRecentWithWhisper(rawText) {
   primary.en = en;
   primary.source = 'smart';
   primary.corrected = true;
+  primary.direction = 'en-zh';
   primary.translating = state.translate;
-  primary.zh = state.translate ? '' : en;
+  primary.zh = '';
 
   candidates.slice(1).forEach((segment) => {
     segment.translationToken = (segment.translationToken || 0) + 1;
@@ -277,7 +300,7 @@ async function correctRecentWithWhisper(rawText) {
 
   if (state.translate) {
     const token = ++primary.translationToken;
-    const translated = await translateText(en);
+    const translated = await translateText(en, 'en-zh');
     if (token !== primary.translationToken) return;
     primary.zh = translated;
     primary.translating = false;
@@ -288,7 +311,7 @@ async function correctRecentWithWhisper(rawText) {
 }
 
 function handleWhisperTranscript(text) {
-  if (!state.isListening || state.isPaused) return;
+  if (!state.isListening || state.isPaused || state.languageDirection !== 'en-zh') return;
   if (state.recognitionMode === 'offline') addSegment(text, 'whisper');
   if (state.recognitionMode === 'smart') setTimeout(() => correctRecentWithWhisper(text), 650);
 }
@@ -296,48 +319,59 @@ function handleWhisperTranscript(text) {
 function scheduleInterimTranslation(text) {
   if (!state.translate || text.length < 3 || text === state.lastInterim) return;
   state.lastInterim = text;
+  const direction = state.languageDirection;
   clearTimeout(state.interimTimer);
   const token = ++state.interimToken;
-  elements.englishSubtitle.textContent = text;
-  elements.englishSubtitle.classList.remove('placeholder');
-  elements.chineseSubtitle.textContent = '即時翻譯中…';
-  elements.chineseSubtitle.classList.add('placeholder');
+  if (direction === 'en-zh') {
+    elements.englishSubtitle.textContent = text;
+    elements.englishSubtitle.classList.remove('placeholder');
+    elements.chineseSubtitle.textContent = '即時翻譯中…';
+    elements.chineseSubtitle.classList.add('placeholder');
+  } else {
+    elements.chineseSubtitle.textContent = text;
+    elements.chineseSubtitle.classList.remove('placeholder');
+    elements.englishSubtitle.textContent = 'Translating…';
+    elements.englishSubtitle.classList.add('placeholder');
+  }
 
   state.interimTimer = setTimeout(async () => {
-    const translated = await translateText(text);
-    if (token !== state.interimToken || !state.isListening) return;
-    elements.chineseSubtitle.textContent = translated;
-    elements.chineseSubtitle.classList.remove('placeholder');
+    const translated = await translateText(text, direction);
+    if (token !== state.interimToken || !state.isListening || direction !== state.languageDirection) return;
+    const targetElement = direction === 'en-zh' ? elements.chineseSubtitle : elements.englishSubtitle;
+    targetElement.textContent = translated;
+    targetElement.classList.remove('placeholder');
   }, 550);
 }
 
-async function translateText(text) {
-  if (state.translationCache[text]) return state.translationCache[text];
+async function translateText(text, direction = state.languageDirection) {
+  const language = LANGUAGE_DIRECTIONS[direction];
+  const cacheKey = `${language.source}:${language.target}:${text}`;
+  if (state.translationCache[cacheKey]) return state.translationCache[cacheKey];
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-TW&dt=t&q=${encodeURIComponent(text)}`;
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${language.source}&tl=${language.target}&dt=t&q=${encodeURIComponent(text)}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error('translation unavailable');
     const data = await response.json();
     const result = data[0].map((part) => part[0]).join('');
-    return cacheTranslation(text, result);
+    return cacheTranslation(cacheKey, result);
   } catch (_) {
     try {
-      const fallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|zh-TW`;
+      const fallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${language.source}|${language.target}`;
       const fallbackResponse = await fetch(fallbackUrl);
       if (!fallbackResponse.ok) throw new Error('fallback unavailable');
       const fallbackData = await fallbackResponse.json();
       const result = fallbackData.responseData?.translatedText;
       if (!result) throw new Error('empty fallback');
-      return cacheTranslation(text, result);
+      return cacheTranslation(cacheKey, result);
     } catch (_) {
-      showToast('翻譯服務暫時連唔到，英文已保存');
-      return '（翻譯暫時未能顯示）';
+      showToast(`翻譯服務暫時連唔到，${direction === 'en-zh' ? '英文' : '中文'}已保存`);
+      return direction === 'en-zh' ? '（翻譯暫時未能顯示）' : '(Translation unavailable)';
     }
   }
 }
 
-function cacheTranslation(text, result) {
-    state.translationCache[text] = result;
+function cacheTranslation(cacheKey, result) {
+    state.translationCache[cacheKey] = result;
     const entries = Object.entries(state.translationCache).slice(-400);
     localStorage.setItem('ll-translation-cache', JSON.stringify(Object.fromEntries(entries)));
     return result;
@@ -348,9 +382,9 @@ function renderSegment(segment) {
   const li = document.createElement('li');
   li.className = 'transcript-item';
   li.dataset.id = segment.id;
-  li.innerHTML = `<time class="transcript-time">${formatClock(segment.atMs).slice(3)}</time><div class="transcript-copy"><p class="zh translating">翻譯中…</p><p class="en"></p><small class="correction-label" hidden>✓ Whisper 校正</small></div>`;
-  li.querySelector('.en').textContent = segment.en;
+  li.innerHTML = `<time class="transcript-time">${formatClock(segment.atMs).slice(3)}</time><div class="transcript-copy"><p class="zh"></p><p class="en"></p><small class="correction-label" hidden>✓ Whisper 校正</small></div>`;
   elements.transcriptList.appendChild(li);
+  updateSegment(segment);
   if (state.autoScroll) li.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
@@ -358,23 +392,30 @@ function updateSegment(segment) {
   const item = elements.transcriptList.querySelector(`[data-id="${CSS.escape(segment.id)}"]`);
   if (!item) return;
   const zh = item.querySelector('.zh');
-  zh.textContent = segment.zh;
-  zh.classList.toggle('translating', segment.translating);
-  item.querySelector('.en').textContent = segment.en;
+  const en = item.querySelector('.en');
+  const direction = segment.direction || 'en-zh';
+  zh.textContent = segment.zh || (segment.translating && direction === 'en-zh' ? '翻譯中…' : '');
+  en.textContent = segment.en || (segment.translating && direction === 'zh-en' ? 'Translating…' : '');
+  zh.classList.toggle('translating', segment.translating && direction === 'en-zh');
+  en.classList.toggle('translating', segment.translating && direction === 'zh-en');
   const correctionLabel = item.querySelector('.correction-label');
   correctionLabel.hidden = !segment.corrected;
 }
 
 function updateStage(segment) {
   if (segment !== state.segments.at(-1)) return;
-  elements.englishSubtitle.textContent = segment.en;
-  elements.englishSubtitle.classList.remove('placeholder');
-  elements.chineseSubtitle.textContent = segment.translating ? '翻譯中…' : segment.zh;
-  elements.chineseSubtitle.classList.toggle('placeholder', segment.translating);
+  const direction = segment.direction || 'en-zh';
+  elements.englishSubtitle.textContent = segment.en || (segment.translating && direction === 'zh-en' ? 'Translating…' : '');
+  elements.chineseSubtitle.textContent = segment.zh || (segment.translating && direction === 'en-zh' ? '翻譯中…' : '');
+  elements.englishSubtitle.classList.toggle('placeholder', segment.translating && direction === 'zh-en');
+  elements.chineseSubtitle.classList.toggle('placeholder', segment.translating && direction === 'en-zh');
 }
 
 function transcriptText(segments = state.segments) {
-  return segments.map((s) => `${formatClock(s.atMs).slice(3)}\n${s.en}\n${s.zh}`).join('\n\n');
+  return segments.map((s) => {
+    const lines = (s.direction || 'en-zh') === 'zh-en' ? [s.zh, s.en] : [s.en, s.zh];
+    return `${formatClock(s.atMs).slice(3)}\n${lines.filter(Boolean).join('\n')}`;
+  }).join('\n\n');
 }
 
 function exportText(segments, options = {}) {
@@ -464,6 +505,12 @@ function restoreDraft() {
     state.currentLessonId = draft.id;
     state.accumulatedMs = draft.durationMs || 0;
     state.segments = draft.segments;
+    const draftDirection = state.segments.at(-1)?.direction;
+    if (LANGUAGE_DIRECTIONS[draftDirection]) {
+      state.languageDirection = draftDirection;
+      localStorage.setItem('ll-language-direction', draftDirection);
+      updateLanguageDirectionUI();
+    }
     elements.elapsedTime.textContent = formatClock(state.accumulatedMs);
     state.segments.forEach((segment) => { renderSegment(segment); updateSegment(segment); });
     updateStage(state.segments.at(-1));
@@ -513,6 +560,29 @@ function openLesson(lesson) {
   el('copyLessonButton').onclick = () => copyText(transcriptText(lesson.segments));
   el('exportLessonButton').onclick = () => openExportOptions(lesson.segments, { createdAt: lesson.createdAt, title: lesson.title });
   elements.lessonDialog.showModal();
+}
+
+function updateLanguageDirectionUI() {
+  if (!LANGUAGE_DIRECTIONS[state.languageDirection]) state.languageDirection = 'en-zh';
+  const input = document.querySelector(`input[name="languageDirection"][value="${state.languageDirection}"]`);
+  if (input) input.checked = true;
+  const chineseToEnglish = state.languageDirection === 'zh-en';
+  document.body.classList.toggle('zh-to-en', chineseToEnglish);
+  elements.translationDirectionLabel.textContent = LANGUAGE_DIRECTIONS[state.languageDirection].label;
+  elements.largeModeLabel.textContent = chineseToEnglish ? '英文大字幕' : '中文大字幕';
+  elements.languageDirectionNote.textContent = chineseToEnglish
+    ? '中文語音使用瀏覽器即時辨識；英文 Whisper 模型不適用於中文。'
+    : '可使用即時、智能校正或離線辨識模式。';
+  elements.languageDirectionNote.classList.toggle('warning', chineseToEnglish);
+  document.querySelectorAll('input[name="recognitionMode"]').forEach((modeInput) => {
+    modeInput.disabled = chineseToEnglish && modeInput.value !== 'realtime';
+  });
+  if (chineseToEnglish && state.recognitionMode !== 'realtime') {
+    state.recognitionMode = 'realtime';
+    localStorage.setItem('ll-recognition-mode', 'realtime');
+  }
+  updateRecognitionModeUI();
+  if (!state.segments.length) setSubtitlePlaceholders();
 }
 
 function whisperCompatible() {
@@ -657,6 +727,15 @@ el('translationToggle').checked = state.translate;
 el('versionLabel').textContent = `v${APP_VERSION}`;
 el('autoScrollToggle').addEventListener('change', (event) => { state.autoScroll = event.target.checked; localStorage.setItem('ll-auto-scroll', state.autoScroll); });
 el('translationToggle').addEventListener('change', (event) => { state.translate = event.target.checked; localStorage.setItem('ll-translate', state.translate); });
+document.querySelectorAll('input[name="languageDirection"]').forEach((input) => input.addEventListener('change', (event) => {
+  if (state.isListening) pauseListening(true);
+  try { state.recognition?.abort(); } catch (_) {}
+  state.recognition = null;
+  state.languageDirection = event.target.value;
+  localStorage.setItem('ll-language-direction', state.languageDirection);
+  updateLanguageDirectionUI();
+  showToast(state.languageDirection === 'zh-en' ? '已轉為中文語音 → 英文' : '已轉為英文語音 → 繁體中文');
+}));
 document.querySelectorAll('input[name="recognitionMode"]').forEach((input) => input.addEventListener('change', (event) => {
   if (state.isListening) pauseListening(true);
   state.recognitionMode = event.target.value;
@@ -690,7 +769,7 @@ whisper?.setStatusHandler(({ status, detail }) => {
   if (status === 'runtime-ready' && state.whisperInstalled) updateWhisperUI('ready');
   else if (['downloading', 'loading-model', 'preparing', 'ready', 'listening', 'transcribing', 'not-installed', 'runtime-error'].includes(status)) updateWhisperUI(status, detail);
 });
-updateRecognitionModeUI();
+updateLanguageDirectionUI();
 refreshWhisperModelState();
 setVisualState('idle');
 restoreDraft();

@@ -7,7 +7,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="LiveLingo" />
-    <meta name="description" content="即時將英文語音變成繁體中文字幕，課堂紀錄只存在本機。" />
+    <meta name="description" content="英文與中文即時雙向語音字幕，課堂紀錄只存在本機。" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.png" />
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
@@ -49,7 +49,7 @@
         <section class="transcript-section" aria-label="字幕紀錄">
           <div class="transcript-empty" id="transcriptEmpty">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18v3M8 21h8M8 11a4 4 0 0 0 8 0V6a4 4 0 1 0-8 0v5Z"/><path d="M5 11a7 7 0 0 0 14 0"/></svg>
-            <p>英文會顯示喺度，翻譯完成後會自動加入繁中字幕。</p>
+            <p>語音原文會顯示喺度，翻譯完成後會自動加入中英字幕。</p>
           </div>
           <ol class="transcript-list" id="transcriptList"></ol>
         </section>
@@ -58,7 +58,7 @@
       <aside class="control-dock" aria-label="字幕控制">
         <button class="utility-control" id="largeModeButton" aria-pressed="false">
           <span class="utility-icon text-icon" aria-hidden="true">文</span>
-          <span>中文大字幕</span>
+          <span id="largeModeLabel">中文大字幕</span>
         </button>
         <button class="mic-control" id="micButton" aria-label="開始聆聽">
           <span class="mic-ring">
@@ -92,7 +92,15 @@
       <div class="sheet-header"><div><p>LiveLingo</p><h2>設定與安裝</h2></div><button class="close-button" data-close="settingsDialog" aria-label="關閉">×</button></div>
       <section class="settings-group">
         <label class="setting-row"><span><strong>自動捲動</strong><small>新字幕出現時移至最底</small></span><input id="autoScrollToggle" type="checkbox" checked /></label>
-        <label class="setting-row"><span><strong>翻譯顯示</strong><small>英文 → 繁體中文</small></span><input id="translationToggle" type="checkbox" checked /></label>
+        <label class="setting-row"><span><strong>翻譯顯示</strong><small id="translationDirectionLabel">英文 → 繁體中文</small></span><input id="translationToggle" type="checkbox" checked /></label>
+      </section>
+      <section class="language-settings" aria-labelledby="languageDirectionTitle">
+        <div class="section-heading"><div><h3 id="languageDirectionTitle">中英轉換</h3><p>選擇聽取語言及字幕翻譯方向</p></div></div>
+        <div class="language-options" role="radiogroup" aria-label="翻譯方向">
+          <label><input type="radio" name="languageDirection" value="en-zh" checked /><span><strong>English</strong><small>英文語音 → 繁體中文</small></span></label>
+          <label><input type="radio" name="languageDirection" value="zh-en" /><span><strong>中文</strong><small>中文語音 → English</small></span></label>
+        </div>
+        <p id="languageDirectionNote" class="language-note">可使用即時、智能校正或離線辨識模式。</p>
       </section>
       <section class="recognition-settings" aria-labelledby="recognitionModeTitle">
         <div class="section-heading">
@@ -143,11 +151,11 @@
       </section>
       <section class="privacy-card">
         <h3>私隱說明</h3>
-        <p>LiveLingo 不會儲存錄音；文字紀錄只存在此瀏覽器。語音辨識由你的瀏覽器／裝置服務處理，英文文字會傳送到翻譯服務。</p>
+        <p>LiveLingo 不會儲存錄音；文字紀錄只存在此瀏覽器。語音辨識由你的瀏覽器／裝置服務處理，辨識文字會傳送到翻譯服務。</p>
       </section>
       <section class="about-card">
-        <div><h3>關於 LiveLingo</h3><p>英文即時語音辨識及繁體中文字幕</p></div>
-        <div class="version-row"><span>版本</span><strong id="versionLabel">v1.6.1</strong></div>
+        <div><h3>關於 LiveLingo</h3><p>中英文即時語音辨識及雙向翻譯字幕</p></div>
+        <div class="version-row"><span>版本</span><strong id="versionLabel">v1.7.0</strong></div>
       </section>
     </dialog>
 

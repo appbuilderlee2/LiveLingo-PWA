@@ -1,7 +1,7 @@
 {
   "name": "LiveLingo 即時字幕",
   "short_name": "LiveLingo",
-  "description": "英文即時語音辨識及繁體中文字幕",
+  "description": "中英文即時語音辨識及雙向翻譯字幕",
   "lang": "zh-Hant",
   "start_url": "./",
   "scope": "./",

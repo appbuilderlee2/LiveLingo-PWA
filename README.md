@@ -1,8 +1,10 @@
 # LiveLingo PWA
 
-Current app version: **v1.6.1**
+Current app version: **v1.7.0**
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
+
+Supports bidirectional live translation: English speech to Traditional Chinese, and Chinese speech to English. English-only Whisper models remain available for the English-to-Chinese direction; Chinese-to-English uses the browser Web Speech engine.
 
 Interim speech is translated after a short debounce, so Traditional Chinese appears before the browser finalizes each English sentence.
 
