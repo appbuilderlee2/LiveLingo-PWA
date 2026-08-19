@@ -157,6 +157,14 @@ button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .primary-wide, .secondary-wide { width: 100%; padding: 15px; border-radius: 14px; font-weight: 700; }
 .primary-wide { margin-top: 24px; border: 0; background: var(--accent); color: white; }
 .secondary-wide { margin-top: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+.format-grid { display: grid; gap: 12px; }
+.format-button { width: 100%; display: grid; grid-template-columns: 58px 1fr; align-items: center; gap: 15px; padding: 15px; text-align: left; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.format-button strong, .format-button small { display: block; }
+.format-button strong { font-size: 17px; }
+.format-button small { margin-top: 4px; color: var(--muted); }
+.format-icon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 14px; background: #203652; color: #bad9ff; font-size: 13px; font-weight: 850; letter-spacing: .04em; }
+.format-icon.pdf { background: rgba(255,91,84,.14); color: var(--accent); }
+.export-help { margin: 18px 4px 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 
 .toast { position: fixed; z-index: 60; left: 50%; bottom: calc(194px + var(--safe-bottom)); transform: translate(-50%, 16px); padding: 11px 16px; background: var(--text); color: var(--bg); border-radius: 99px; font-weight: 650; font-size: 14px; opacity: 0; pointer-events: none; transition: .25s; white-space: nowrap; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
