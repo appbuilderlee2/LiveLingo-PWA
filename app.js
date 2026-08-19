@@ -20,6 +20,9 @@ const state = {
   timer: null,
   segments: [],
   currentLessonId: null,
+  interimTimer: null,
+  interimToken: 0,
+  lastInterim: '',
   autoScroll: JSON.parse(localStorage.getItem('ll-auto-scroll') ?? 'true'),
   translate: JSON.parse(localStorage.getItem('ll-translate') ?? 'true'),
   translationCache: JSON.parse(localStorage.getItem('ll-translation-cache') ?? '{}')
@@ -69,12 +72,15 @@ function createRecognition() {
 
   recognition.onresult = (event) => {
     let interim = '';
+    let hasFinal = false;
     for (let i = event.resultIndex; i < event.results.length; i += 1) {
       const text = event.results[i][0].transcript.trim();
-      if (event.results[i].isFinal) addSegment(text);
+      if (event.results[i].isFinal) { hasFinal = true; addSegment(text); }
       else interim += `${text} `;
     }
-    elements.interimText.textContent = interim ? `Listening: ${interim}` : '';
+    const liveText = interim.trim();
+    elements.interimText.textContent = liveText ? `Listening: ${liveText}` : '';
+    if (liveText && !hasFinal) scheduleInterimTranslation(liveText);
   };
 
   recognition.onerror = (event) => {
@@ -123,6 +129,9 @@ function pauseListening(fromError = false) {
   state.isListening = false;
   state.isPaused = true;
   state.shouldRestart = false;
+  state.interimToken += 1;
+  state.lastInterim = '';
+  clearTimeout(state.interimTimer);
   elements.interimText.textContent = '';
   try { state.recognition?.stop(); } catch (_) {}
   setVisualState('paused');
@@ -168,6 +177,9 @@ function finishLesson() {
 }
 
 async function addSegment(rawText) {
+  state.interimToken += 1;
+  state.lastInterim = '';
+  clearTimeout(state.interimTimer);
   const en = punctuate(rawText);
   const duplicate = state.segments.at(-1)?.en === en;
   if (!en || duplicate) return;
@@ -187,6 +199,24 @@ async function addSegment(rawText) {
     segment.translating = false;
     updateSegment(segment);
   }
+}
+
+function scheduleInterimTranslation(text) {
+  if (!state.translate || text.length < 3 || text === state.lastInterim) return;
+  state.lastInterim = text;
+  clearTimeout(state.interimTimer);
+  const token = ++state.interimToken;
+  elements.englishSubtitle.textContent = text;
+  elements.englishSubtitle.classList.remove('placeholder');
+  elements.chineseSubtitle.textContent = '即時翻譯中…';
+  elements.chineseSubtitle.classList.add('placeholder');
+
+  state.interimTimer = setTimeout(async () => {
+    const translated = await translateText(text);
+    if (token !== state.interimToken || !state.isListening) return;
+    elements.chineseSubtitle.textContent = translated;
+    elements.chineseSubtitle.classList.remove('placeholder');
+  }, 550);
 }
 
 async function translateText(text) {
