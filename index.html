@@ -111,6 +111,21 @@
       <button id="exportLessonButton" class="secondary-wide">輸出課堂檔案</button>
     </dialog>
 
+    <dialog id="exportDialog" class="sheet-dialog export-dialog">
+      <div class="sheet-header"><div><p>課堂內容</p><h2>選擇輸出格式</h2></div><button class="close-button" data-close="exportDialog" aria-label="關閉">×</button></div>
+      <div class="format-grid">
+        <button id="exportTxtButton" class="format-button">
+          <span class="format-icon">TXT</span>
+          <span><strong>文字檔</strong><small>方便編輯及複製內容</small></span>
+        </button>
+        <button id="exportPdfButton" class="format-button">
+          <span class="format-icon pdf">PDF</span>
+          <span><strong>PDF 文件</strong><small>開啟預覽後儲存或分享</small></span>
+        </button>
+      </div>
+      <p class="export-help">iPhone 選擇 PDF 後，喺列印預覽撳分享，再選「儲存到檔案」。</p>
+    </dialog>
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="app.js"></script>
   </body>
