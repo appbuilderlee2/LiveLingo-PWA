@@ -32,8 +32,16 @@
   let pollTimer = null;
   let transcriptHandler = null;
   let statusHandler = null;
+  let runtimeError = null;
   let resolveRuntime;
   const runtimePromise = new Promise((resolve) => { resolveRuntime = resolve; });
+
+  window.addEventListener('error', (event) => {
+    const source = event.target?.src || '';
+    if (!source.includes('whisper.cpp/stream.wasm/stream.js')) return;
+    runtimeError = new Error('Whisper 運算核心下載失敗');
+    emitStatus('runtime-error', runtimeError.message);
+  }, true);
 
   function emitStatus(status, detail = '') {
     statusHandler?.({ status, detail });
@@ -51,6 +59,15 @@
       emitStatus('runtime-ready');
     }
   };
+
+  function waitForRuntime(timeoutMs = 20000) {
+    if (runtimeReady) return Promise.resolve();
+    if (runtimeError) return Promise.reject(runtimeError);
+    return Promise.race([
+      runtimePromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Whisper 運算核心啟動逾時，請完全關閉並重新開啟 App')), timeoutMs))
+    ]);
+  }
 
   function openDatabase() {
     return new Promise((resolve, reject) => {
@@ -120,7 +137,7 @@
   }
 
   async function ensureModel() {
-    await runtimePromise;
+    await waitForRuntime();
     if (loadedModel === selectedModel) return true;
     if (loadedModel) unloadModel();
     const cached = await getStoredModel(selectedModel);
@@ -130,30 +147,37 @@
     return true;
   }
 
+  function fetchModel(modelInfo, onProgress) {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open('GET', modelInfo.url, true);
+      request.responseType = 'arraybuffer';
+      request.timeout = 180000;
+      request.onprogress = (event) => {
+        const total = event.lengthComputable ? event.total : modelInfo.sizeMb * 1048576;
+        onProgress?.(total ? event.loaded / total : 0, event.loaded, total, 'downloading');
+      };
+      request.onload = () => {
+        if (request.status >= 200 && request.status < 300 && request.response) resolve(new Uint8Array(request.response));
+        else reject(new Error(`模型下載失敗（${request.status || '網絡錯誤'}）`));
+      };
+      request.onerror = () => reject(new Error('模型下載失敗，請檢查網絡'));
+      request.ontimeout = () => reject(new Error('模型下載逾時，請再試一次'));
+      request.send();
+    });
+  }
+
   async function downloadModel(onProgress) {
-    await runtimePromise;
     const modelKey = selectedModel;
     const modelInfo = MODELS[modelKey];
     emitStatus('downloading');
-    const response = await fetch(modelInfo.url);
-    if (!response.ok || !response.body) throw new Error(`model download failed (${response.status})`);
-    const total = Number(response.headers.get('content-length')) || 0;
-    const reader = response.body.getReader();
-    const chunks = [];
-    let received = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      received += value.length;
-      onProgress?.(total ? received / total : 0, received, total);
-    }
-    const model = new Uint8Array(received);
-    let offset = 0;
-    chunks.forEach((chunk) => { model.set(chunk, offset); offset += chunk.length; });
+    const model = await fetchModel(modelInfo, onProgress);
     await storeModel(model, modelKey);
+    onProgress?.(1, model.byteLength, model.byteLength, 'preparing');
+    emitStatus('preparing', '模型已下載，正在啟動運算核心…');
+    await waitForRuntime();
     storeInWasm(model, modelKey);
-    onProgress?.(1, received, total);
+    onProgress?.(1, model.byteLength, model.byteLength, 'ready');
     return true;
   }
 
@@ -256,6 +280,7 @@
     get modelReady() { return loadedModel === selectedModel; },
     get selectedModel() { return selectedModel; },
     get models() { return MODELS; },
+    get runtimeError() { return runtimeError; },
     setTranscriptHandler(handler) { transcriptHandler = handler; },
     setStatusHandler(handler) { statusHandler = handler; },
     hasModel,

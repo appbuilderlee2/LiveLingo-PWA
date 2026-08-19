@@ -1,5 +1,5 @@
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -21,6 +21,7 @@ const elements = {
   settingsDialog: el('settingsDialog'), lessonDialog: el('lessonDialog'), historyList: el('historyList'), toast: el('toast'),
   whisperModelCard: el('whisperModelCard'), whisperStatus: el('whisperStatus'), whisperProgress: el('whisperProgress'),
   whisperProgressBar: el('whisperProgressBar'), whisperCompatibility: el('whisperCompatibility'),
+  whisperProgressText: el('whisperProgressText'),
   whisperModelName: el('whisperModelName'), whisperModelDetail: el('whisperModelDetail'),
   downloadWhisperButton: el('downloadWhisperButton'), deleteWhisperButton: el('deleteWhisperButton'), activeModeBadge: el('activeModeBadge')
 };
@@ -530,12 +531,14 @@ function updateRecognitionModeUI() {
 function updateWhisperUI(status = state.whisperStatus, detail = '') {
   state.whisperStatus = status;
   const model = WHISPER_MODELS[state.whisperModel];
+  const busy = ['downloading', 'preparing', 'loading-model'].includes(status);
   elements.whisperModelName.textContent = `Whisper ${model.name}`;
   elements.whisperModelDetail.textContent = `英文模型 · 約 ${model.sizeMb} MB`;
   elements.downloadWhisperButton.textContent = `下載模型（${model.sizeMb} MB）`;
   const labels = {
     'not-installed': '未下載', downloading: '下載中', 'loading-model': '載入中', ready: '已準備',
-    listening: '聆聽中', transcribing: '校正中', error: '發生錯誤', runtime: '啟動中'
+    listening: '聆聽中', transcribing: '校正中', preparing: '準備中', downloaded: '已下載',
+    error: '發生錯誤', 'runtime-error': '核心錯誤', runtime: '啟動中'
   };
   elements.whisperStatus.textContent = labels[status] || (state.whisperInstalled ? '已準備' : '未下載');
   elements.whisperStatus.classList.toggle('ready', ['ready', 'listening', 'transcribing'].includes(status));
@@ -548,10 +551,15 @@ function updateWhisperUI(status = state.whisperStatus, detail = '') {
   } else if (!window.crossOriginIsolated) {
     elements.whisperCompatibility.textContent = '首次更新後請完全關閉並重新開啟 App，才可啟用 Whisper 安全運算模式。';
     elements.whisperCompatibility.classList.add('warning');
+    elements.downloadWhisperButton.disabled = false;
   } else {
     elements.whisperCompatibility.textContent = detail || '模型只會存在這部裝置，錄音不會上傳。';
     elements.whisperCompatibility.classList.remove('warning');
     elements.downloadWhisperButton.disabled = false;
+  }
+  if (busy) {
+    elements.downloadWhisperButton.disabled = true;
+    elements.downloadWhisperButton.textContent = status === 'downloading' ? '正在下載…' : '正在準備…';
   }
 }
 
@@ -567,24 +575,41 @@ async function refreshWhisperModelState() {
 
 async function downloadWhisperModel() {
   if (!whisperCompatible()) { showToast('此瀏覽器未能運行 Whisper'); return; }
-  if (!window.crossOriginIsolated) { showToast('請重新開啟 App 後再下載模型'); return; }
-  elements.downloadWhisperButton.disabled = true;
-  elements.whisperProgress.hidden = false;
   updateWhisperUI('downloading');
+  elements.downloadWhisperButton.disabled = true;
+  elements.downloadWhisperButton.textContent = '正在下載…';
+  elements.whisperProgress.hidden = false;
+  elements.whisperProgress.classList.add('indeterminate');
+  elements.whisperProgressText.hidden = false;
+  elements.whisperProgressText.textContent = '正在連接模型伺服器…';
+  elements.whisperProgressBar.style.width = '0%';
   try {
-    await whisper.downloadModel((progress, received) => {
+    await whisper.downloadModel((progress, received, total, stage) => {
       const percent = progress ? Math.round(progress * 100) : 0;
+      const receivedMb = received / 1048576;
+      const totalMb = (total || WHISPER_MODELS[state.whisperModel].sizeMb * 1048576) / 1048576;
+      elements.whisperProgress.classList.toggle('indeterminate', stage === 'preparing');
       elements.whisperProgressBar.style.width = `${percent}%`;
       elements.whisperStatus.textContent = percent ? `${percent}%` : `${Math.round(received / 1048576)} MB`;
+      elements.whisperProgressText.textContent = stage === 'preparing'
+        ? '模型已保存，正在啟動 Whisper 運算核心…'
+        : stage === 'ready' ? `下載完成 · ${receivedMb.toFixed(1)} MB`
+          : `已下載 ${receivedMb.toFixed(1)} / ${totalMb.toFixed(1)} MB`;
     });
     state.whisperInstalled = true;
     updateWhisperUI('ready');
+    elements.whisperProgress.classList.remove('indeterminate');
+    elements.whisperProgressBar.style.width = '100%';
     showToast('Whisper 模型已準備');
   } catch (error) {
-    updateWhisperUI('error', error.message);
-    showToast('模型下載失敗，請檢查網絡再試');
+    state.whisperInstalled = await whisper.hasModel(state.whisperModel);
+    updateWhisperUI(state.whisperInstalled ? 'downloaded' : 'error', error.message);
+    elements.whisperProgress.classList.remove('indeterminate');
+    elements.whisperProgressText.textContent = state.whisperInstalled
+      ? `模型已下載，但運算核心未啟動：${error.message}`
+      : error.message;
+    showToast(state.whisperInstalled ? '模型已下載，請完全關閉再開啟 App' : error.message);
   } finally {
-    elements.whisperProgress.hidden = true;
     elements.downloadWhisperButton.disabled = false;
   }
 }
@@ -645,6 +670,8 @@ document.querySelectorAll('input[name="whisperModel"]').forEach((input) => input
   localStorage.setItem('ll-whisper-model', state.whisperModel);
   whisper.setModel(state.whisperModel);
   state.whisperInstalled = await whisper.hasModel(state.whisperModel);
+  elements.whisperProgress.hidden = true;
+  elements.whisperProgressText.hidden = true;
   updateWhisperUI(state.whisperInstalled ? 'ready' : 'not-installed');
   showToast(state.whisperInstalled ? `${WHISPER_MODELS[state.whisperModel].name} 已準備` : `需要下載 ${WHISPER_MODELS[state.whisperModel].sizeMb} MB 模型`);
 }));
@@ -661,7 +688,7 @@ if ('serviceWorker' in navigator) window.addEventListener('load', () => navigato
 whisper?.setTranscriptHandler(handleWhisperTranscript);
 whisper?.setStatusHandler(({ status, detail }) => {
   if (status === 'runtime-ready' && state.whisperInstalled) updateWhisperUI('ready');
-  else if (['downloading', 'loading-model', 'ready', 'listening', 'transcribing', 'not-installed'].includes(status)) updateWhisperUI(status, detail);
+  else if (['downloading', 'loading-model', 'preparing', 'ready', 'listening', 'transcribing', 'not-installed', 'runtime-error'].includes(status)) updateWhisperUI(status, detail);
 });
 updateRecognitionModeUI();
 refreshWhisperModelState();

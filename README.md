@@ -1,6 +1,6 @@
 # LiveLingo PWA
 
-Current app version: **v1.6.0**
+Current app version: **v1.6.1**
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
