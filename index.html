@@ -94,6 +94,44 @@
         <label class="setting-row"><span><strong>自動捲動</strong><small>新字幕出現時移至最底</small></span><input id="autoScrollToggle" type="checkbox" checked /></label>
         <label class="setting-row"><span><strong>翻譯顯示</strong><small>英文 → 繁體中文</small></span><input id="translationToggle" type="checkbox" checked /></label>
       </section>
+      <section class="recognition-settings" aria-labelledby="recognitionModeTitle">
+        <div class="section-heading">
+          <div><h3 id="recognitionModeTitle">語音辨識模式</h3><p>可隨時轉換，下次開啟會保留選擇</p></div>
+          <span id="activeModeBadge" class="mode-badge">即時</span>
+        </div>
+        <div class="mode-options" role="radiogroup" aria-label="語音辨識模式">
+          <label class="mode-option">
+            <input type="radio" name="recognitionMode" value="realtime" checked />
+            <span class="mode-icon" aria-hidden="true">⚡</span>
+            <span class="mode-copy"><strong>即時</strong><small>只用 Web Speech，最快及最省電</small></span>
+            <span class="mode-check" aria-hidden="true">✓</span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="recognitionMode" value="smart" />
+            <span class="mode-icon" aria-hidden="true">✨</span>
+            <span class="mode-copy"><strong>智能校正 <em>Beta</em></strong><small>即時出字，再用 Whisper 校正最近內容</small></span>
+            <span class="mode-check" aria-hidden="true">✓</span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="recognitionMode" value="offline" />
+            <span class="mode-icon" aria-hidden="true">🔒</span>
+            <span class="mode-copy"><strong>離線辨識 <em>Beta</em></strong><small>只用 Whisper；中文字幕仍需要網絡</small></span>
+            <span class="mode-check" aria-hidden="true">✓</span>
+          </label>
+        </div>
+        <div id="whisperModelCard" class="model-card" hidden>
+          <div class="model-status-row">
+            <span><strong>Whisper tiny.en Q5_1</strong><small id="whisperModelDetail">英文模型 · 約 31 MB</small></span>
+            <span id="whisperStatus" class="model-status">未下載</span>
+          </div>
+          <div class="model-progress" id="whisperProgress" hidden><span id="whisperProgressBar"></span></div>
+          <p id="whisperCompatibility" class="model-note">模型只會存在這部裝置，錄音不會上傳。</p>
+          <div class="model-actions">
+            <button id="downloadWhisperButton" class="model-primary" type="button">下載模型（31 MB）</button>
+            <button id="deleteWhisperButton" class="model-secondary" type="button" hidden>刪除模型</button>
+          </div>
+        </div>
+      </section>
       <section class="install-card">
         <h3>加入 iPhone 主畫面</h3>
         <p>用 Safari 開啟網站，撳「分享」<span aria-hidden="true">⇧</span>，再揀「加入主畫面」。首次使用要允許咪高峰。</p>
@@ -104,7 +142,7 @@
       </section>
       <section class="about-card">
         <div><h3>關於 LiveLingo</h3><p>英文即時語音辨識及繁體中文字幕</p></div>
-        <div class="version-row"><span>版本</span><strong id="versionLabel">v1.4.0</strong></div>
+        <div class="version-row"><span>版本</span><strong id="versionLabel">v1.5.0</strong></div>
       </section>
     </dialog>
 
@@ -131,6 +169,8 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="whisper-engine.js"></script>
+    <script src="https://ggml.ai/whisper.cpp/stream.wasm/stream.js" crossorigin="anonymous"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>

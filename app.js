@@ -1,5 +1,11 @@
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
+const whisper = window.LiveLingoWhisper;
+const RECOGNITION_MODES = {
+  realtime: { label: '即時', needsWhisper: false },
+  smart: { label: '智能校正', needsWhisper: true },
+  offline: { label: '離線辨識', needsWhisper: true }
+};
 
 const el = (id) => document.getElementById(id);
 const elements = {
@@ -8,7 +14,10 @@ const elements = {
   chineseSubtitle: el('chineseSubtitle'), englishSubtitle: el('englishSubtitle'), interimText: el('interimText'),
   subtitleStage: el('subtitleStage'), transcriptList: el('transcriptList'), transcriptEmpty: el('transcriptEmpty'),
   largeModeButton: el('largeModeButton'), copyButton: el('copyButton'), exportButton: el('exportButton'), historyDialog: el('historyDialog'),
-  settingsDialog: el('settingsDialog'), lessonDialog: el('lessonDialog'), historyList: el('historyList'), toast: el('toast')
+  settingsDialog: el('settingsDialog'), lessonDialog: el('lessonDialog'), historyList: el('historyList'), toast: el('toast'),
+  whisperModelCard: el('whisperModelCard'), whisperStatus: el('whisperStatus'), whisperProgress: el('whisperProgress'),
+  whisperProgressBar: el('whisperProgressBar'), whisperCompatibility: el('whisperCompatibility'),
+  downloadWhisperButton: el('downloadWhisperButton'), deleteWhisperButton: el('deleteWhisperButton'), activeModeBadge: el('activeModeBadge')
 };
 
 const state = {
@@ -25,6 +34,9 @@ const state = {
   interimTimer: null,
   interimToken: 0,
   lastInterim: '',
+  recognitionMode: localStorage.getItem('ll-recognition-mode') || 'realtime',
+  whisperInstalled: false,
+  whisperStatus: 'not-installed',
   autoScroll: JSON.parse(localStorage.getItem('ll-auto-scroll') ?? 'true'),
   translate: JSON.parse(localStorage.getItem('ll-translate') ?? 'true'),
   translationCache: JSON.parse(localStorage.getItem('ll-translation-cache') ?? '{}')
@@ -109,20 +121,41 @@ function punctuate(text) {
 }
 
 async function startListening() {
-  if (!SpeechRecognition) {
+  const usesWebSpeech = state.recognitionMode !== 'offline';
+  const usesWhisper = RECOGNITION_MODES[state.recognitionMode].needsWhisper;
+  if (usesWebSpeech && !SpeechRecognition) {
     showToast('此瀏覽器未支援即時語音；請用 iPhone Safari');
     return;
   }
+  if (usesWhisper && !state.whisperInstalled) {
+    elements.settingsDialog.showModal();
+    showToast('請先下載 Whisper 模型');
+    return;
+  }
   if (!state.currentLessonId) state.currentLessonId = crypto.randomUUID?.() || String(Date.now());
-  if (!state.recognition) state.recognition = createRecognition();
+  if (usesWebSpeech && !state.recognition) state.recognition = createRecognition();
   state.startTime = Date.now();
   state.isListening = true;
   state.isPaused = false;
   state.shouldRestart = true;
   setVisualState('listening');
   startTimer();
-  try { state.recognition.start(); }
-  catch (_) { showToast('正在重新連接咪高峰…'); }
+  if (usesWebSpeech) {
+    try { state.recognition.start(); }
+    catch (_) { showToast('正在重新連接咪高峰…'); }
+  }
+  if (usesWhisper) {
+    try {
+      await whisper.start();
+    } catch (error) {
+      if (state.recognitionMode === 'offline') {
+        pauseListening(true);
+        showToast(error.message || '未能啟動 Whisper');
+      } else {
+        showToast('Whisper 未能啟動，繼續使用即時模式');
+      }
+    }
+  }
 }
 
 function pauseListening(fromError = false) {
@@ -136,6 +169,7 @@ function pauseListening(fromError = false) {
   clearTimeout(state.interimTimer);
   elements.interimText.textContent = '';
   try { state.recognition?.stop(); } catch (_) {}
+  whisper?.stop();
   setVisualState('paused');
   if (!fromError) showToast('已暫停，紀錄仍保留');
 }
@@ -178,20 +212,23 @@ function finishLesson() {
   resetLesson();
 }
 
-async function addSegment(rawText) {
+async function addSegment(rawText, source = 'web') {
   state.interimToken += 1;
   state.lastInterim = '';
   clearTimeout(state.interimTimer);
   const en = punctuate(rawText);
   const duplicate = state.segments.at(-1)?.en === en;
   if (!en || duplicate) return;
-  const segment = { id: `${Date.now()}-${state.segments.length}`, atMs: lessonElapsed(), en, zh: '', translating: state.translate };
+  const segment = { id: `${Date.now()}-${state.segments.length}`, atMs: lessonElapsed(), en, zh: '', translating: state.translate, source, corrected: false, translationToken: 0 };
   state.segments.push(segment);
   renderSegment(segment);
   updateStage(segment);
   persistDraft();
   if (state.translate) {
-    segment.zh = await translateText(en);
+    const token = ++segment.translationToken;
+    const translated = await translateText(en);
+    if (token !== segment.translationToken) return;
+    segment.zh = translated;
     segment.translating = false;
     updateSegment(segment);
     updateStage(segment);
@@ -201,6 +238,52 @@ async function addSegment(rawText) {
     segment.translating = false;
     updateSegment(segment);
   }
+}
+
+async function correctRecentWithWhisper(rawText) {
+  const en = punctuate(rawText);
+  if (!en) return;
+  const now = lessonElapsed();
+  const candidates = state.segments.filter((segment) => !segment.corrected && segment.source === 'web' && segment.atMs >= Math.max(0, now - 10000));
+  if (!candidates.length) {
+    await addSegment(en, 'whisper');
+    return;
+  }
+
+  const primary = candidates[0];
+  primary.translationToken = (primary.translationToken || 0) + 1;
+  primary.en = en;
+  primary.source = 'smart';
+  primary.corrected = true;
+  primary.translating = state.translate;
+  primary.zh = state.translate ? '' : en;
+
+  candidates.slice(1).forEach((segment) => {
+    segment.translationToken = (segment.translationToken || 0) + 1;
+    elements.transcriptList.querySelector(`[data-id="${CSS.escape(segment.id)}"]`)?.remove();
+  });
+  const removedIds = new Set(candidates.slice(1).map((segment) => segment.id));
+  state.segments = state.segments.filter((segment) => !removedIds.has(segment.id));
+  updateSegment(primary);
+  updateStage(primary);
+  persistDraft();
+
+  if (state.translate) {
+    const token = ++primary.translationToken;
+    const translated = await translateText(en);
+    if (token !== primary.translationToken) return;
+    primary.zh = translated;
+    primary.translating = false;
+    updateSegment(primary);
+    updateStage(primary);
+    persistDraft();
+  }
+}
+
+function handleWhisperTranscript(text) {
+  if (!state.isListening || state.isPaused) return;
+  if (state.recognitionMode === 'offline') addSegment(text, 'whisper');
+  if (state.recognitionMode === 'smart') setTimeout(() => correctRecentWithWhisper(text), 650);
 }
 
 function scheduleInterimTranslation(text) {
@@ -258,7 +341,7 @@ function renderSegment(segment) {
   const li = document.createElement('li');
   li.className = 'transcript-item';
   li.dataset.id = segment.id;
-  li.innerHTML = `<time class="transcript-time">${formatClock(segment.atMs).slice(3)}</time><div class="transcript-copy"><p class="zh translating">翻譯中…</p><p class="en"></p></div>`;
+  li.innerHTML = `<time class="transcript-time">${formatClock(segment.atMs).slice(3)}</time><div class="transcript-copy"><p class="zh translating">翻譯中…</p><p class="en"></p><small class="correction-label" hidden>✓ Whisper 校正</small></div>`;
   li.querySelector('.en').textContent = segment.en;
   elements.transcriptList.appendChild(li);
   if (state.autoScroll) li.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -270,6 +353,9 @@ function updateSegment(segment) {
   const zh = item.querySelector('.zh');
   zh.textContent = segment.zh;
   zh.classList.toggle('translating', segment.translating);
+  item.querySelector('.en').textContent = segment.en;
+  const correctionLabel = item.querySelector('.correction-label');
+  correctionLabel.hidden = !segment.corrected;
 }
 
 function updateStage(segment) {
@@ -422,6 +508,83 @@ function openLesson(lesson) {
   elements.lessonDialog.showModal();
 }
 
+function whisperCompatible() {
+  return Boolean(window.WebAssembly && navigator.mediaDevices?.getUserMedia);
+}
+
+function updateRecognitionModeUI() {
+  const mode = RECOGNITION_MODES[state.recognitionMode] ? state.recognitionMode : 'realtime';
+  state.recognitionMode = mode;
+  document.querySelector(`input[name="recognitionMode"][value="${mode}"]`).checked = true;
+  elements.activeModeBadge.textContent = RECOGNITION_MODES[mode].label;
+  elements.whisperModelCard.hidden = !RECOGNITION_MODES[mode].needsWhisper;
+  if (RECOGNITION_MODES[mode].needsWhisper) updateWhisperUI();
+}
+
+function updateWhisperUI(status = state.whisperStatus, detail = '') {
+  state.whisperStatus = status;
+  const labels = {
+    'not-installed': '未下載', downloading: '下載中', 'loading-model': '載入中', ready: '已準備',
+    listening: '聆聽中', transcribing: '校正中', error: '發生錯誤', runtime: '啟動中'
+  };
+  elements.whisperStatus.textContent = labels[status] || (state.whisperInstalled ? '已準備' : '未下載');
+  elements.whisperStatus.classList.toggle('ready', ['ready', 'listening', 'transcribing'].includes(status));
+  elements.downloadWhisperButton.hidden = state.whisperInstalled;
+  elements.deleteWhisperButton.hidden = !state.whisperInstalled;
+  if (!whisperCompatible()) {
+    elements.whisperCompatibility.textContent = '這個瀏覽器不支援 Whisper 所需的音訊或 WebAssembly 功能。';
+    elements.whisperCompatibility.classList.add('warning');
+    elements.downloadWhisperButton.disabled = true;
+  } else if (!window.crossOriginIsolated) {
+    elements.whisperCompatibility.textContent = '首次更新後請完全關閉並重新開啟 App，才可啟用 Whisper 安全運算模式。';
+    elements.whisperCompatibility.classList.add('warning');
+  } else {
+    elements.whisperCompatibility.textContent = detail || '模型只會存在這部裝置，錄音不會上傳。';
+    elements.whisperCompatibility.classList.remove('warning');
+    elements.downloadWhisperButton.disabled = false;
+  }
+}
+
+async function refreshWhisperModelState() {
+  if (!whisper) return;
+  state.whisperInstalled = await whisper.hasModel();
+  updateWhisperUI(state.whisperInstalled ? 'ready' : 'not-installed');
+}
+
+async function downloadWhisperModel() {
+  if (!whisperCompatible()) { showToast('此瀏覽器未能運行 Whisper'); return; }
+  if (!window.crossOriginIsolated) { showToast('請重新開啟 App 後再下載模型'); return; }
+  elements.downloadWhisperButton.disabled = true;
+  elements.whisperProgress.hidden = false;
+  updateWhisperUI('downloading');
+  try {
+    await whisper.downloadModel((progress, received) => {
+      const percent = progress ? Math.round(progress * 100) : 0;
+      elements.whisperProgressBar.style.width = `${percent}%`;
+      elements.whisperStatus.textContent = percent ? `${percent}%` : `${Math.round(received / 1048576)} MB`;
+    });
+    state.whisperInstalled = true;
+    updateWhisperUI('ready');
+    showToast('Whisper 模型已準備');
+  } catch (error) {
+    updateWhisperUI('error', error.message);
+    showToast('模型下載失敗，請檢查網絡再試');
+  } finally {
+    elements.whisperProgress.hidden = true;
+    elements.downloadWhisperButton.disabled = false;
+  }
+}
+
+async function deleteWhisperModel() {
+  if (!confirm('確定刪除 31 MB Whisper 模型？之後使用時需要重新下載。')) return;
+  await whisper.deleteModel();
+  state.whisperInstalled = false;
+  state.recognitionMode = 'realtime';
+  localStorage.setItem('ll-recognition-mode', state.recognitionMode);
+  updateRecognitionModeUI();
+  showToast('Whisper 模型已刪除');
+}
+
 elements.micButton.addEventListener('click', () => {
   if (state.isListening) pauseListening(); else startListening();
 });
@@ -456,6 +619,15 @@ el('translationToggle').checked = state.translate;
 el('versionLabel').textContent = `v${APP_VERSION}`;
 el('autoScrollToggle').addEventListener('change', (event) => { state.autoScroll = event.target.checked; localStorage.setItem('ll-auto-scroll', state.autoScroll); });
 el('translationToggle').addEventListener('change', (event) => { state.translate = event.target.checked; localStorage.setItem('ll-translate', state.translate); });
+document.querySelectorAll('input[name="recognitionMode"]').forEach((input) => input.addEventListener('change', (event) => {
+  if (state.isListening) pauseListening(true);
+  state.recognitionMode = event.target.value;
+  localStorage.setItem('ll-recognition-mode', state.recognitionMode);
+  updateRecognitionModeUI();
+  if (RECOGNITION_MODES[state.recognitionMode].needsWhisper && !state.whisperInstalled) showToast('首次使用要下載 31 MB 模型');
+}));
+elements.downloadWhisperButton.addEventListener('click', downloadWhisperModel);
+elements.deleteWhisperButton.addEventListener('click', deleteWhisperModel);
 el('clearHistoryButton').addEventListener('click', () => {
   if (confirm('確定清除所有本機課堂紀錄？')) { localStorage.removeItem('ll-lessons'); renderHistory(); showToast('所有紀錄已清除'); }
 });
@@ -464,5 +636,12 @@ window.addEventListener('beforeunload', persistDraft);
 document.addEventListener('visibilitychange', () => { if (document.hidden) persistDraft(); });
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+whisper?.setTranscriptHandler(handleWhisperTranscript);
+whisper?.setStatusHandler(({ status, detail }) => {
+  if (status === 'runtime-ready' && state.whisperInstalled) updateWhisperUI('ready');
+  else if (['downloading', 'loading-model', 'ready', 'listening', 'transcribing', 'not-installed'].includes(status)) updateWhisperUI(status, detail);
+});
+updateRecognitionModeUI();
+refreshWhisperModelState();
 setVisualState('idle');
 restoreDraft();

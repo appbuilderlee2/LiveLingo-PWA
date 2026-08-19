@@ -85,6 +85,8 @@ button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .transcript-copy .zh { font-size: 18px; }
 .transcript-copy .en { margin-top: 4px; color: var(--muted); font-size: 15px; }
 .transcript-copy .translating { color: var(--muted-2); }
+.correction-label { display: block; margin-top: 5px; color: #68d6aa; font-size: 11px; font-weight: 700; }
+.correction-label[hidden] { display: none; }
 
 .control-dock {
   position: fixed;
@@ -141,12 +143,41 @@ button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .history-item small { display: block; margin-top: 6px; color: var(--muted); }
 .history-duration { color: var(--muted); font-variant-numeric: tabular-nums; }
 .danger-text { width: 100%; padding: 18px; margin-top: 20px; border: 0; background: transparent; color: var(--accent); }
-.settings-group, .install-card, .privacy-card, .about-card { border: 1px solid var(--line); border-radius: 20px; background: var(--surface); overflow: hidden; }
+.settings-group, .recognition-settings, .install-card, .privacy-card, .about-card { border: 1px solid var(--line); border-radius: 20px; background: var(--surface); overflow: hidden; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 17px; border-bottom: 1px solid var(--line); }
 .setting-row:last-child { border-bottom: 0; }
 .setting-row strong, .setting-row small { display: block; }
 .setting-row small { color: var(--muted); margin-top: 3px; }
 .setting-row input { width: 48px; height: 28px; accent-color: var(--accent); }
+.recognition-settings { padding: 18px; margin-top: 16px; }
+.section-heading, .model-status-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.section-heading h3 { margin: 0; font-size: 17px; }
+.section-heading p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.mode-badge { flex: none; padding: 6px 10px; border-radius: 99px; color: #ffd0cd; background: rgba(255,91,84,.14); font-size: 12px; font-weight: 750; }
+.mode-options { display: grid; gap: 9px; margin-top: 15px; }
+.mode-option { position: relative; display: grid; grid-template-columns: 34px 1fr 25px; align-items: center; gap: 10px; padding: 13px; border: 1px solid var(--line); border-radius: 15px; background: #0d1b2e; cursor: pointer; }
+.mode-option:has(input:checked) { border-color: rgba(255,91,84,.75); background: rgba(255,91,84,.075); }
+.mode-option input { position: absolute; opacity: 0; pointer-events: none; }
+.mode-icon { font-size: 21px; text-align: center; }
+.mode-copy strong, .mode-copy small { display: block; }
+.mode-copy small { margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.mode-copy em { margin-left: 4px; color: var(--accent); font-size: 10px; font-style: normal; letter-spacing: .04em; }
+.mode-check { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid #43536b; border-radius: 50%; color: transparent; font-size: 13px; }
+.mode-option:has(input:checked) .mode-check { border-color: var(--accent); background: var(--accent); color: white; }
+.model-card { margin-top: 14px; padding: 15px; border-radius: 15px; background: #091523; border: 1px solid var(--line); }
+.model-status-row strong, .model-status-row small { display: block; }
+.model-status-row small { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.model-status { flex: none; color: #f2ba69; font-size: 12px; font-weight: 750; }
+.model-status.ready { color: #68d6aa; }
+.model-progress { height: 6px; margin-top: 13px; overflow: hidden; border-radius: 99px; background: var(--line); }
+.model-progress span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s; }
+.model-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.model-note.warning { color: #f2ba69; }
+.model-actions { display: flex; gap: 9px; margin-top: 13px; }
+.model-primary, .model-secondary { padding: 10px 12px; border-radius: 11px; font-size: 12px; font-weight: 720; }
+.model-primary { border: 0; background: var(--accent); color: white; }
+.model-primary:disabled { opacity: .55; }
+.model-secondary { border: 1px solid var(--line); background: transparent; color: var(--muted); }
 .install-card, .privacy-card, .about-card { padding: 18px; margin-top: 16px; }
 .install-card h3, .privacy-card h3, .about-card h3 { margin: 0 0 8px; font-size: 17px; }
 .install-card p, .privacy-card p, .about-card p { margin: 0; color: var(--muted); line-height: 1.55; }
