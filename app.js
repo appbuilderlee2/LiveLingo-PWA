@@ -6,7 +6,7 @@ const elements = {
   statusLabel: el('statusLabel'), elapsedTime: el('elapsedTime'), finishButton: el('finishButton'),
   chineseSubtitle: el('chineseSubtitle'), englishSubtitle: el('englishSubtitle'), interimText: el('interimText'),
   subtitleStage: el('subtitleStage'), transcriptList: el('transcriptList'), transcriptEmpty: el('transcriptEmpty'),
-  largeModeButton: el('largeModeButton'), copyButton: el('copyButton'), historyDialog: el('historyDialog'),
+  largeModeButton: el('largeModeButton'), copyButton: el('copyButton'), exportButton: el('exportButton'), historyDialog: el('historyDialog'),
   settingsDialog: el('settingsDialog'), lessonDialog: el('lessonDialog'), historyList: el('historyList'), toast: el('toast')
 };
 
@@ -282,6 +282,44 @@ function transcriptText(segments = state.segments) {
   return segments.map((s) => `${formatClock(s.atMs).slice(3)}\n${s.en}\n${s.zh}`).join('\n\n');
 }
 
+function exportText(segments, options = {}) {
+  const createdAt = new Date(options.createdAt || Date.now());
+  const title = options.title || 'LiveLingo 課堂內容';
+  const dateLabel = new Intl.DateTimeFormat('zh-HK', { dateStyle: 'long', timeStyle: 'short' }).format(createdAt);
+  return `${title}\n${dateLabel}\n\n${transcriptText(segments)}`;
+}
+
+function exportFilename(createdAt = new Date()) {
+  const stamp = new Date(createdAt).toISOString().slice(0, 16).replace('T', '-').replace(':', '');
+  return `LiveLingo-${stamp}.txt`;
+}
+
+async function exportLesson(segments = state.segments, options = {}) {
+  if (!segments.length) { showToast('暫時未有課堂內容可以輸出'); return; }
+  const content = exportText(segments, options);
+  const filename = exportFilename(options.createdAt);
+  const file = new File([content], filename, { type: 'text/plain;charset=utf-8' });
+
+  try {
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ title: options.title || 'LiveLingo 課堂內容', files: [file] });
+      showToast('課堂內容已輸出');
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast('課堂文字檔已下載');
+  } catch (error) {
+    if (error?.name !== 'AbortError') showToast('未能輸出，請再試一次');
+  }
+}
+
 async function copyText(text, success = '已複製字幕內容') {
   if (!text) { showToast('暫時未有字幕可以複製'); return; }
   try { await navigator.clipboard.writeText(text); showToast(success); }
@@ -347,6 +385,7 @@ function openLesson(lesson) {
     el('lessonContent').appendChild(div);
   });
   el('copyLessonButton').onclick = () => copyText(transcriptText(lesson.segments));
+  el('exportLessonButton').onclick = () => exportLesson(lesson.segments, { createdAt: lesson.createdAt, title: lesson.title });
   elements.lessonDialog.showModal();
 }
 
@@ -355,6 +394,7 @@ elements.micButton.addEventListener('click', () => {
 });
 elements.finishButton.addEventListener('click', finishLesson);
 elements.copyButton.addEventListener('click', () => copyText(transcriptText()));
+elements.exportButton.addEventListener('click', () => exportLesson());
 elements.largeModeButton.addEventListener('click', () => {
   const enabled = !document.body.classList.contains('large-mode');
   document.body.classList.toggle('large-mode', enabled);
