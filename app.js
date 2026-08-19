@@ -1,4 +1,5 @@
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const APP_VERSION = '1.4.0';
 
 const el = (id) => document.getElementById(id);
 const elements = {
@@ -452,6 +453,7 @@ document.querySelectorAll('dialog').forEach((dialog) => dialog.addEventListener(
 
 el('autoScrollToggle').checked = state.autoScroll;
 el('translationToggle').checked = state.translate;
+el('versionLabel').textContent = `v${APP_VERSION}`;
 el('autoScrollToggle').addEventListener('change', (event) => { state.autoScroll = event.target.checked; localStorage.setItem('ll-auto-scroll', state.autoScroll); });
 el('translationToggle').addEventListener('change', (event) => { state.translate = event.target.checked; localStorage.setItem('ll-translate', state.translate); });
 el('clearHistoryButton').addEventListener('click', () => {
