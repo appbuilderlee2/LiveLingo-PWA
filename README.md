@@ -2,6 +2,8 @@
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
+Interim speech is translated after a short debounce, so Traditional Chinese appears before the browser finalizes each English sentence.
+
 ## Run locally
 
 Serve this directory over HTTPS (required for microphone access), or use localhost during development:
