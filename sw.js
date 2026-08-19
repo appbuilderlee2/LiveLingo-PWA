@@ -1,4 +1,4 @@
-const CACHE = 'livelingo-v1.3.0';
+const CACHE = 'livelingo-v1.4.0';
 const APP_SHELL = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
