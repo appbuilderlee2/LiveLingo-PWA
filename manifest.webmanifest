@@ -1,0 +1,16 @@
+{
+  "name": "LiveLingo 即時字幕",
+  "short_name": "LiveLingo",
+  "description": "英文即時語音辨識及繁體中文字幕",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#071321",
+  "theme_color": "#071321",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
