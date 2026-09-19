@@ -1,6 +1,6 @@
 # LiveLingo PWA
 
-Current app version: **v2.2.0**
+Current app version: **v2.3.0**
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
@@ -78,3 +78,13 @@ The whisper.cpp WebAssembly runtime is provided by the official project under it
 - Suppresses identical Whisper engine poll output before it reaches the caption pipeline.
 - Offline Whisper captions remove repeated leading words introduced by the rolling overlap, using up to a 10-word suffix/prefix match.
 - Smart-correction mode continues to use the full overlapped Whisper transcript for alignment against recent Web Speech segments.
+
+
+## v2.3.0 adaptive live translation
+
+- Replaces the fixed 550 ms interim-translation delay with an adaptive scheduler.
+- Very short phrases can begin translating after about 260 ms, while longer unfinished sentences wait slightly longer for better context.
+- Sentence-ending punctuation can trigger translation in about 180 ms.
+- Interim translation requests are throttled to at least 450 ms apart to reduce unnecessary network traffic during continuous speech.
+- Tiny transcript extensions wait a little longer instead of repeatedly translating almost identical text.
+- The last completed Chinese subtitle remains visible while the next interim translation is pending, reducing subtitle flicker.
