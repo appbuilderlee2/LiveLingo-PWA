@@ -21,6 +21,7 @@
   const STORE_NAME = 'models';
   const SAMPLE_RATE = 16000;
   const CHUNK_SECONDS = 5;
+  const OVERLAP_SECONDS = 1;
 
   let runtimeReady = false;
   let selectedModel = 'tiny-en-q5_1';
@@ -34,6 +35,8 @@
   let silentGain = null;
   let pcmChunks = [];
   let pcmLength = 0;
+  let overlapTail = new Float32Array(0);
+  let lastEngineTranscript = '';
   let pollTimer = null;
   let transcriptHandler = null;
   let statusHandler = null;
@@ -202,12 +205,23 @@
 
   function sendAudio() {
     if (!instance || pcmLength < SAMPLE_RATE * 0.8) return;
-    const pcm = new Float32Array(pcmLength);
+
+    const freshPcm = new Float32Array(pcmLength);
     let offset = 0;
-    pcmChunks.forEach((chunk) => { pcm.set(chunk, offset); offset += chunk.length; });
+    pcmChunks.forEach((chunk) => { freshPcm.set(chunk, offset); offset += chunk.length; });
     pcmChunks = [];
     pcmLength = 0;
-    window.Module.set_audio(instance, pcm);
+
+    const overlapSamples = Math.min(freshPcm.length, SAMPLE_RATE * OVERLAP_SECONDS);
+    const combined = new Float32Array(overlapTail.length + freshPcm.length);
+    combined.set(overlapTail, 0);
+    combined.set(freshPcm, overlapTail.length);
+
+    overlapTail = overlapSamples
+      ? freshPcm.slice(freshPcm.length - overlapSamples)
+      : new Float32Array(0);
+
+    window.Module.set_audio(instance, combined);
     emitStatus('transcribing');
   }
 
@@ -267,7 +281,10 @@
     pollTimer = setInterval(() => {
       if (!instance) return;
       const text = window.Module.get_transcribed()?.trim();
-      if (text) transcriptHandler?.(text);
+      if (text && text !== lastEngineTranscript) {
+        lastEngineTranscript = text;
+        transcriptHandler?.(text);
+      }
       const status = window.Module.get_status?.();
       if (status) emitStatus('engine', status);
     }, 250);
@@ -293,6 +310,8 @@
     audioContext = null;
     pcmChunks = [];
     pcmLength = 0;
+    overlapTail = new Float32Array(0);
+    lastEngineTranscript = '';
     emitStatus(loadedModel ? 'ready' : 'not-installed');
   }
 
