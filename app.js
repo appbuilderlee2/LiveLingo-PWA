@@ -1,5 +1,5 @@
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -53,7 +53,8 @@ const state = {
   autoScroll: JSON.parse(localStorage.getItem('ll-auto-scroll') ?? 'true'),
   translate: JSON.parse(localStorage.getItem('ll-translate') ?? 'true'),
   translationCache: JSON.parse(localStorage.getItem('ll-translation-cache') ?? '{}'),
-  translationCacheSaveTimer: null
+  translationCacheSaveTimer: null,
+  draftSaveTimer: null
 };
 
 function formatClock(ms) {
@@ -269,18 +270,74 @@ async function addSegment(rawText, source = 'web') {
   }
 }
 
+function normalizeEnglishForMatch(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9' ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function wordSet(text) {
+  return new Set(normalizeEnglishForMatch(text).split(' ').filter((word) => word.length > 1));
+}
+
+function textSimilarity(a, b) {
+  const aWords = wordSet(a);
+  const bWords = wordSet(b);
+  if (!aWords.size || !bWords.size) return 0;
+
+  let intersection = 0;
+  aWords.forEach((word) => { if (bWords.has(word)) intersection += 1; });
+  const union = new Set([...aWords, ...bWords]).size;
+  const jaccard = union ? intersection / union : 0;
+  const containment = intersection / Math.max(1, Math.min(aWords.size, bWords.size));
+  return (jaccard * 0.6) + (containment * 0.4);
+}
+
+function findWhisperCorrectionWindow(whisperText, candidates) {
+  let best = null;
+  const maxWindow = Math.min(3, candidates.length);
+
+  for (let size = 1; size <= maxWindow; size += 1) {
+    for (let start = 0; start <= candidates.length - size; start += 1) {
+      const group = candidates.slice(start, start + size);
+      const combined = group.map((segment) => segment.en).join(' ');
+      const similarity = textSimilarity(whisperText, combined);
+      const recencyBonus = start + size === candidates.length ? 0.04 : 0;
+      const score = similarity + recencyBonus;
+      if (!best || score > best.score) best = { group, score, similarity };
+    }
+  }
+
+  return best;
+}
+
 async function correctRecentWithWhisper(rawText) {
   if (state.languageDirection !== 'en-zh') return;
   const en = punctuate(rawText, 'en-zh');
   if (!en) return;
+
   const now = lessonElapsed();
-  const candidates = state.segments.filter((segment) => !segment.corrected && segment.source === 'web' && (segment.direction || 'en-zh') === 'en-zh' && segment.atMs >= Math.max(0, now - 10000));
+  const candidates = state.segments.filter((segment) =>
+    !segment.corrected &&
+    segment.source === 'web' &&
+    (segment.direction || 'en-zh') === 'en-zh' &&
+    segment.atMs >= Math.max(0, now - 12000)
+  );
+
   if (!candidates.length) {
     await addSegment(en, 'whisper');
     return;
   }
 
-  const primary = candidates[0];
+  const match = findWhisperCorrectionWindow(en, candidates);
+  if (!match || match.similarity < 0.24) {
+    await addSegment(en, 'whisper');
+    return;
+  }
+
+  const [primary, ...merged] = match.group;
   primary.translationToken = (primary.translationToken || 0) + 1;
   primary.en = en;
   primary.source = 'smart';
@@ -289,12 +346,16 @@ async function correctRecentWithWhisper(rawText) {
   primary.translating = state.translate;
   primary.zh = '';
 
-  candidates.slice(1).forEach((segment) => {
+  merged.forEach((segment) => {
     segment.translationToken = (segment.translationToken || 0) + 1;
     elements.transcriptList.querySelector(`[data-id="${CSS.escape(segment.id)}"]`)?.remove();
   });
-  const removedIds = new Set(candidates.slice(1).map((segment) => segment.id));
-  state.segments = state.segments.filter((segment) => !removedIds.has(segment.id));
+
+  if (merged.length) {
+    const removedIds = new Set(merged.map((segment) => segment.id));
+    state.segments = state.segments.filter((segment) => !removedIds.has(segment.id));
+  }
+
   updateSegment(primary);
   updateStage(primary);
   persistDraft();
@@ -510,9 +571,21 @@ async function copyText(text, success = '已複製字幕內容') {
   catch (_) { showToast('未能複製，請再試一次'); }
 }
 
+function writeDraftNow() {
+  if (!state.currentLessonId) return;
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = null;
+  localStorage.setItem('ll-draft', JSON.stringify({
+    id: state.currentLessonId,
+    durationMs: lessonElapsed(),
+    segments: state.segments
+  }));
+}
+
 function persistDraft() {
   if (!state.currentLessonId) return;
-  localStorage.setItem('ll-draft', JSON.stringify({ id: state.currentLessonId, durationMs: lessonElapsed(), segments: state.segments }));
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = setTimeout(writeDraftNow, 700);
 }
 
 function restoreDraft() {
@@ -777,8 +850,8 @@ el('clearHistoryButton').addEventListener('click', () => {
   if (confirm('確定清除所有本機課堂紀錄？')) { localStorage.removeItem('ll-lessons'); renderHistory(); showToast('所有紀錄已清除'); }
 });
 
-window.addEventListener('beforeunload', persistDraft);
-document.addEventListener('visibilitychange', () => { if (document.hidden) persistDraft(); });
+window.addEventListener('beforeunload', writeDraftNow);
+document.addEventListener('visibilitychange', () => { if (document.hidden) writeDraftNow(); });
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
 whisper?.setTranscriptHandler(handleWhisperTranscript);
