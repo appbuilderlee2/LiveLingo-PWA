@@ -1,11 +1,12 @@
 import { lessonStore } from './storage.js';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
-  'base-en-q5_1': { name: 'base.en Q5_1', sizeMb: 57 }
+  'base-en-q5_1': { name: 'base.en Q5_1', sizeMb: 57 },
+  'small-en-q5_1': { name: 'small.en Q5_1', sizeMb: 181 }
 };
 const RECOGNITION_MODES = {
   realtime: { label: '即時', needsWhisper: false },
@@ -757,8 +758,11 @@ function updateWhisperUI(status = state.whisperStatus, detail = '') {
     elements.whisperCompatibility.classList.add('warning');
     elements.downloadWhisperButton.disabled = false;
   } else {
-    elements.whisperCompatibility.textContent = detail || '模型只會存在這部裝置，錄音不會上傳。';
-    elements.whisperCompatibility.classList.remove('warning');
+    const isSmallModel = state.whisperModel === 'small-en-q5_1';
+    elements.whisperCompatibility.textContent = detail || (isSmallModel
+      ? 'Small 模型約 181 MB，準確度較高但需要更多記憶體及運算；較適合新款 iPhone，長時間使用可能較熱。'
+      : '模型只會存在這部裝置，錄音不會上傳。');
+    elements.whisperCompatibility.classList.toggle('warning', isSmallModel);
     elements.downloadWhisperButton.disabled = false;
   }
   if (busy) {
@@ -779,6 +783,20 @@ async function refreshWhisperModelState() {
 
 async function downloadWhisperModel() {
   if (!whisperCompatible()) { showToast('此瀏覽器未能運行 Whisper'); return; }
+
+  const model = WHISPER_MODELS[state.whisperModel];
+  if (navigator.storage?.estimate) {
+    try {
+      const estimate = await navigator.storage.estimate();
+      const available = Math.max(0, (estimate.quota || 0) - (estimate.usage || 0));
+      const required = model.sizeMb * 1048576 * 1.25;
+      if (estimate.quota && available < required) {
+        showToast(`儲存空間不足，${model.name} 建議預留約 ${Math.ceil(model.sizeMb * 1.25)} MB`);
+        return;
+      }
+    } catch (_) {}
+  }
+
   updateWhisperUI('downloading');
   elements.downloadWhisperButton.disabled = true;
   elements.downloadWhisperButton.textContent = '正在下載…';
