@@ -1,6 +1,6 @@
 # LiveLingo PWA
 
-Current app version: **v2.3.0**
+Current app version: **v2.4.0**
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
@@ -88,3 +88,13 @@ The whisper.cpp WebAssembly runtime is provided by the official project under it
 - Interim translation requests are throttled to at least 450 ms apart to reduce unnecessary network traffic during continuous speech.
 - Tiny transcript extensions wait a little longer instead of repeatedly translating almost identical text.
 - The last completed Chinese subtitle remains visible while the next interim translation is pending, reducing subtitle flicker.
+
+
+## v2.4.0 caption reading experience
+
+- Separates the current live caption area from the completed transcript with clear visual labels.
+- Shows a compact live state such as “正在講”, “最新字幕”, or “已暫停”.
+- Replaces duplicated interim English text with a lightweight recognition status, reducing visual clutter.
+- Caption text only updates when the visible content actually changes.
+- Adds a subtle short transition for changed caption text instead of abrupt full-line flashes.
+- Keeps completed transcript rows visually stable under a sticky “已完成字幕” heading.
