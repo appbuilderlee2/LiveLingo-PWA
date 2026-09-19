@@ -1,10 +1,11 @@
-const CACHE = 'livelingo-v1.9.0';
+const CACHE = 'livelingo-v2.0.0';
 const REMOTE_RUNTIME = 'https://ggml.ai/whisper.cpp/stream.wasm/stream.js';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './storage.js',
   './whisper-engine.js',
   './audio-worklet.js',
   './manifest.webmanifest',
