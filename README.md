@@ -1,6 +1,6 @@
 # LiveLingo PWA
 
-Current app version: **v2.1.0**
+Current app version: **v2.2.0**
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
@@ -69,3 +69,12 @@ The whisper.cpp WebAssembly runtime is provided by the official project under it
 - The app shows a higher-resource warning when Small is selected.
 - Before downloading a model, the PWA checks estimated browser storage and asks for roughly 25% headroom.
 - Large-model downloads use a longer timeout to reduce failures on slower connections.
+
+
+## v2.2.0 Whisper chunk continuity
+
+- Adds a 1-second rolling audio overlap between 5-second Whisper chunks to reduce word loss at chunk boundaries.
+- Keeps the overlap in memory only; audio is still not written to storage.
+- Suppresses identical Whisper engine poll output before it reaches the caption pipeline.
+- Offline Whisper captions remove repeated leading words introduced by the rolling overlap, using up to a 10-word suffix/prefix match.
+- Smart-correction mode continues to use the full overlapped Whisper transcript for alignment against recent Web Speech segments.
