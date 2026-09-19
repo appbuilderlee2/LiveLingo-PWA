@@ -44,8 +44,9 @@ function transactionDone(transaction) {
 async function getAllLessons() {
   const db = await openDatabase();
   const tx = db.transaction(LESSON_STORE, 'readonly');
+  const done = transactionDone(tx);
   const lessons = await requestResult(tx.objectStore(LESSON_STORE).getAll());
-  await transactionDone(tx);
+  await done;
   return lessons.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
@@ -55,46 +56,52 @@ async function trimLessons() {
   const idsToDelete = lessons.slice(MAX_LESSONS).map((lesson) => lesson.id);
   const db = await openDatabase();
   const tx = db.transaction(LESSON_STORE, 'readwrite');
+  const done = transactionDone(tx);
   const store = tx.objectStore(LESSON_STORE);
   idsToDelete.forEach((id) => store.delete(id));
-  await transactionDone(tx);
+  await done;
 }
 
 async function saveLesson(lesson) {
   const db = await openDatabase();
   const tx = db.transaction(LESSON_STORE, 'readwrite');
+  const done = transactionDone(tx);
   tx.objectStore(LESSON_STORE).put(lesson);
-  await transactionDone(tx);
+  await done;
   await trimLessons();
 }
 
 async function clearLessons() {
   const db = await openDatabase();
   const tx = db.transaction(LESSON_STORE, 'readwrite');
+  const done = transactionDone(tx);
   tx.objectStore(LESSON_STORE).clear();
-  await transactionDone(tx);
+  await done;
 }
 
 async function saveDraft(draft) {
   const db = await openDatabase();
   const tx = db.transaction(META_STORE, 'readwrite');
+  const done = transactionDone(tx);
   tx.objectStore(META_STORE).put({ key: 'draft', value: draft });
-  await transactionDone(tx);
+  await done;
 }
 
 async function getDraft() {
   const db = await openDatabase();
   const tx = db.transaction(META_STORE, 'readonly');
+  const done = transactionDone(tx);
   const record = await requestResult(tx.objectStore(META_STORE).get('draft'));
-  await transactionDone(tx);
+  await done;
   return record?.value || null;
 }
 
 async function clearDraft() {
   const db = await openDatabase();
   const tx = db.transaction(META_STORE, 'readwrite');
+  const done = transactionDone(tx);
   tx.objectStore(META_STORE).delete('draft');
-  await transactionDone(tx);
+  await done;
 }
 
 async function migrateLegacyLocalStorage() {
@@ -106,11 +113,12 @@ async function migrateLegacyLocalStorage() {
     if (Array.isArray(lessons) && lessons.length) {
       const db = await openDatabase();
       const tx = db.transaction(LESSON_STORE, 'readwrite');
+      const done = transactionDone(tx);
       const store = tx.objectStore(LESSON_STORE);
       lessons.slice(0, MAX_LESSONS).forEach((lesson) => {
         if (lesson?.id) store.put(lesson);
       });
-      await transactionDone(tx);
+      await done;
     }
 
     const draft = JSON.parse(localStorage.getItem('ll-draft') || 'null');
