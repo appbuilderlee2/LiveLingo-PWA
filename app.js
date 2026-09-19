@@ -1,5 +1,5 @@
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -52,7 +52,8 @@ const state = {
   whisperStatus: 'not-installed',
   autoScroll: JSON.parse(localStorage.getItem('ll-auto-scroll') ?? 'true'),
   translate: JSON.parse(localStorage.getItem('ll-translate') ?? 'true'),
-  translationCache: JSON.parse(localStorage.getItem('ll-translation-cache') ?? '{}')
+  translationCache: JSON.parse(localStorage.getItem('ll-translation-cache') ?? '{}'),
+  translationCacheSaveTimer: null
 };
 
 function formatClock(ms) {
@@ -343,23 +344,31 @@ function scheduleInterimTranslation(text) {
   }, 550);
 }
 
+async function fetchJsonWithTimeout(url, timeoutMs = 6500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function translateText(text, direction = state.languageDirection) {
   const language = LANGUAGE_DIRECTIONS[direction];
   const cacheKey = `${language.source}:${language.target}:${text}`;
   if (state.translationCache[cacheKey]) return state.translationCache[cacheKey];
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${language.source}&tl=${language.target}&dt=t&q=${encodeURIComponent(text)}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('translation unavailable');
-    const data = await response.json();
+    const data = await fetchJsonWithTimeout(url);
     const result = data[0].map((part) => part[0]).join('');
     return cacheTranslation(cacheKey, result);
   } catch (_) {
     try {
       const fallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${language.source}|${language.target}`;
-      const fallbackResponse = await fetch(fallbackUrl);
-      if (!fallbackResponse.ok) throw new Error('fallback unavailable');
-      const fallbackData = await fallbackResponse.json();
+      const fallbackData = await fetchJsonWithTimeout(fallbackUrl, 7500);
       const result = fallbackData.responseData?.translatedText;
       if (!result) throw new Error('empty fallback');
       return cacheTranslation(cacheKey, result);
@@ -370,11 +379,19 @@ async function translateText(text, direction = state.languageDirection) {
   }
 }
 
+function scheduleTranslationCacheSave() {
+  clearTimeout(state.translationCacheSaveTimer);
+  state.translationCacheSaveTimer = setTimeout(() => {
+    localStorage.setItem('ll-translation-cache', JSON.stringify(state.translationCache));
+  }, 1500);
+}
+
 function cacheTranslation(cacheKey, result) {
-    state.translationCache[cacheKey] = result;
-    const entries = Object.entries(state.translationCache).slice(-400);
-    localStorage.setItem('ll-translation-cache', JSON.stringify(Object.fromEntries(entries)));
-    return result;
+  state.translationCache[cacheKey] = result;
+  const entries = Object.entries(state.translationCache).slice(-400);
+  state.translationCache = Object.fromEntries(entries);
+  scheduleTranslationCacheSave();
+  return result;
 }
 
 function renderSegment(segment) {
