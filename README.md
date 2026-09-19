@@ -1,6 +1,6 @@
 # LiveLingo PWA
 
-Current app version: **v2.0.0**
+Current app version: **v2.1.0**
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
@@ -26,7 +26,7 @@ Open `http://localhost:4173`.
 
 - Speech recognition uses the browser Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`).
 - Recognition modes include Web Speech, Web Speech with local Whisper correction, and local Whisper-only recognition.
-- Whisper loads the official whisper.cpp WebAssembly stream runtime. Users can download `tiny.en Q5_1` (about 31 MB, faster) or `base.en Q5_1` (about 57 MB, more accurate) on demand. The audio capture path now prefers `AudioWorklet` for better long-session stability, with `ScriptProcessor` retained only as a compatibility fallback. The service worker caches the runtime and IndexedDB stores each model separately for later offline use.
+- Whisper loads the official whisper.cpp WebAssembly stream runtime. Users can download `tiny.en Q5_1` (about 31 MiB, fastest), `base.en Q5_1` (about 57 MiB, balanced), or `small.en Q5_1` (about 181 MiB, higher accuracy) on demand. The audio capture path now prefers `AudioWorklet` for better long-session stability, with `ScriptProcessor` retained only as a compatibility fallback. The service worker caches the runtime and IndexedDB stores each model separately for later offline use.
 - Translation uses the public Google Translate web endpoint and therefore needs an internet connection.
 - Audio is never written by this app. Lesson history and unfinished drafts are stored asynchronously in IndexedDB; small preferences remain in local storage.
 - iPhone users should open the deployed HTTPS site in Safari and choose Share → Add to Home Screen.
@@ -59,3 +59,13 @@ The whisper.cpp WebAssembly runtime is provided by the official project under it
 - Repeated Whisper poll results are suppressed for a short window so stale engine output does not create duplicate captions or repeated smart corrections.
 - Identical translation requests now share one in-flight network request instead of sending duplicates.
 - Draft writes remain debounced and use asynchronous IndexedDB storage; backgrounding the PWA triggers an immediate save attempt.
+
+
+## v2.1.0 Small Whisper model
+
+- Adds the official whisper.cpp `small.en Q5_1` model as an optional high-accuracy English model.
+- Keeps Tiny and Base available for lower latency and lower memory use.
+- Small is about 181 MiB and is not selected automatically.
+- The app shows a higher-resource warning when Small is selected.
+- Before downloading a model, the PWA checks estimated browser storage and asks for roughly 25% headroom.
+- Large-model downloads use a longer timeout to reduce failures on slower connections.
