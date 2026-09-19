@@ -1,6 +1,6 @@
 # LiveLingo PWA
 
-Current app version: **v1.8.0**
+Current app version: **v1.9.0**
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
@@ -41,3 +41,11 @@ The whisper.cpp WebAssembly runtime is provided by the official project under it
 - Failed JS/CSS requests no longer fall back to `index.html`, preventing MIME and `Unexpected token '<'` failures.
 - Translation requests now have timeouts and automatic fallback instead of waiting indefinitely on a stalled endpoint.
 - Translation cache writes are debounced to reduce synchronous localStorage work while live captions are running.
+
+
+## v1.9.0 caption quality improvements
+
+- Smart Whisper correction now aligns the Whisper transcript against the best matching recent Web Speech segment window instead of blindly replacing every recent segment.
+- Low-confidence Whisper matches are preserved as separate segments rather than deleting potentially correct live captions.
+- The matcher can safely merge one to three nearby Web Speech segments when Whisper returns a longer corrected phrase.
+- Draft lesson persistence is debounced during live captioning to reduce synchronous localStorage writes, while backgrounding or closing the app still forces an immediate save.
