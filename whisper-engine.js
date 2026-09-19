@@ -25,6 +25,7 @@
   let stream = null;
   let audioContext = null;
   let sourceNode = null;
+  let workletNode = null;
   let processorNode = null;
   let silentGain = null;
   let pcmChunks = [];
@@ -226,17 +227,36 @@
     audioContext = new AudioContextClass();
     await audioContext.resume();
     sourceNode = audioContext.createMediaStreamSource(stream);
-    processorNode = audioContext.createScriptProcessor(4096, 1, 1);
     silentGain = audioContext.createGain();
     silentGain.gain.value = 0;
-    processorNode.onaudioprocess = (event) => {
-      const chunk = downsample(event.inputBuffer.getChannelData(0), audioContext.sampleRate);
+
+    const acceptChunk = (input) => {
+      const chunk = downsample(input, audioContext.sampleRate);
       pcmChunks.push(chunk);
       pcmLength += chunk.length;
       if (pcmLength >= SAMPLE_RATE * CHUNK_SECONDS) sendAudio();
     };
-    sourceNode.connect(processorNode);
-    processorNode.connect(silentGain);
+
+    if (audioContext.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
+      try {
+        await audioContext.audioWorklet.addModule('./audio-worklet.js');
+        workletNode = new AudioWorkletNode(audioContext, 'livelingo-capture');
+        workletNode.port.onmessage = (event) => acceptChunk(event.data);
+        sourceNode.connect(workletNode);
+        workletNode.connect(silentGain);
+      } catch (error) {
+        console.warn('[Whisper] AudioWorklet unavailable, falling back to ScriptProcessor', error);
+        workletNode = null;
+      }
+    }
+
+    if (!workletNode) {
+      processorNode = audioContext.createScriptProcessor(4096, 1, 1);
+      processorNode.onaudioprocess = (event) => acceptChunk(event.inputBuffer.getChannelData(0));
+      sourceNode.connect(processorNode);
+      processorNode.connect(silentGain);
+    }
+
     silentGain.connect(audioContext.destination);
 
     clearInterval(pollTimer);
@@ -254,11 +274,14 @@
     sendAudio();
     clearInterval(pollTimer);
     pollTimer = null;
+    if (workletNode) workletNode.port.onmessage = null;
+    workletNode?.disconnect();
     processorNode?.disconnect();
     sourceNode?.disconnect();
     silentGain?.disconnect();
     stream?.getTracks().forEach((track) => track.stop());
     audioContext?.close().catch(() => {});
+    workletNode = null;
     processorNode = null;
     sourceNode = null;
     silentGain = null;
