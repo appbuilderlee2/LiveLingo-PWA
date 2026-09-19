@@ -10,6 +10,10 @@
     'base-en-q5_1': {
       name: 'base.en Q5_1', sizeMb: 57, dbKey: 'base.en-q5_1',
       url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q5_1.bin'
+    },
+    'small-en-q5_1': {
+      name: 'small.en Q5_1', sizeMb: 181, dbKey: 'small.en-q5_1',
+      url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q5_1.bin'
     }
   };
   const DB_NAME = 'livelingo-whisper';
@@ -153,7 +157,7 @@
       const request = new XMLHttpRequest();
       request.open('GET', modelInfo.url, true);
       request.responseType = 'arraybuffer';
-      request.timeout = 180000;
+      request.timeout = modelInfo.sizeMb >= 150 ? 600000 : 180000;
       request.onprogress = (event) => {
         const total = event.lengthComputable ? event.total : modelInfo.sizeMb * 1048576;
         onProgress?.(total ? event.loaded / total : 0, event.loaded, total, 'downloading');
