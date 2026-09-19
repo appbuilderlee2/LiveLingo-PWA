@@ -1,7 +1,7 @@
 import { lessonStore } from './storage.js';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.2.0';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -307,6 +307,30 @@ function textSimilarity(a, b) {
   return (jaccard * 0.6) + (containment * 0.4);
 }
 
+function normalizedWord(word) {
+  return String(word || '').toLowerCase().replace(/[^a-z0-9']/g, '');
+}
+
+function trimWhisperOverlap(previousText, currentText) {
+  const previousWords = String(previousText || '').trim().split(/\s+/).filter(Boolean);
+  const currentWords = String(currentText || '').trim().split(/\s+/).filter(Boolean);
+  if (previousWords.length < 2 || currentWords.length < 2) return currentText;
+
+  const previousNormalized = previousWords.map(normalizedWord);
+  const currentNormalized = currentWords.map(normalizedWord);
+  const maxOverlap = Math.min(10, previousNormalized.length, currentNormalized.length);
+
+  for (let size = maxOverlap; size >= 2; size -= 1) {
+    const previousSuffix = previousNormalized.slice(-size);
+    const currentPrefix = currentNormalized.slice(0, size);
+    if (previousSuffix.every((word, index) => word && word === currentPrefix[index])) {
+      return currentWords.slice(size).join(' ');
+    }
+  }
+
+  return currentText;
+}
+
 function findWhisperCorrectionWindow(whisperText, candidates) {
   let best = null;
   const maxWindow = Math.min(3, candidates.length);
@@ -397,7 +421,15 @@ function handleWhisperTranscript(text) {
   state.lastWhisperText = text;
   state.lastWhisperAt = now;
 
-  if (state.recognitionMode === 'offline') addSegment(text, 'whisper');
+  if (state.recognitionMode === 'offline') {
+    const previousWhisper = [...state.segments].reverse().find((segment) =>
+      (segment.source === 'whisper' || segment.source === 'smart') &&
+      (segment.direction || 'en-zh') === 'en-zh'
+    );
+    const novelText = trimWhisperOverlap(previousWhisper?.en || '', text).trim();
+    if (novelText) addSegment(novelText, 'whisper');
+  }
+
   if (state.recognitionMode === 'smart') setTimeout(() => correctRecentWithWhisper(text), 650);
 }
 
