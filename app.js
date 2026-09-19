@@ -1,5 +1,7 @@
+import { lessonStore } from './storage.js';
+
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '2.0.0';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -54,7 +56,10 @@ const state = {
   translate: JSON.parse(localStorage.getItem('ll-translate') ?? 'true'),
   translationCache: JSON.parse(localStorage.getItem('ll-translation-cache') ?? '{}'),
   translationCacheSaveTimer: null,
-  draftSaveTimer: null
+  translationInflight: new Map(),
+  draftSaveTimer: null,
+  lastWhisperText: '',
+  lastWhisperAt: 0
 };
 
 function formatClock(ms) {
@@ -211,7 +216,9 @@ function resetLesson() {
   state.accumulatedMs = 0;
   state.currentLessonId = null;
   state.segments = [];
-  localStorage.removeItem('ll-draft');
+  state.lastWhisperText = '';
+  state.lastWhisperAt = 0;
+  lessonStore.clearDraft().catch(() => {});
   clearInterval(state.timer);
   elements.elapsedTime.textContent = '00:00:00';
   elements.transcriptList.innerHTML = '';
@@ -220,10 +227,9 @@ function resetLesson() {
   setVisualState('idle');
 }
 
-function finishLesson() {
+async function finishLesson() {
   if (state.isListening) pauseListening(true);
   if (!state.segments.length) { resetLesson(); return; }
-  const lessons = getLessons();
   const lesson = {
     id: state.currentLessonId,
     createdAt: new Date().toISOString(),
@@ -231,11 +237,16 @@ function finishLesson() {
     title: (state.segments[0]?.en || state.segments[0]?.zh || 'LiveLingo lesson').slice(0, 48),
     segments: state.segments
   };
-  const existing = lessons.findIndex((item) => item.id === lesson.id);
-  if (existing >= 0) lessons[existing] = lesson; else lessons.unshift(lesson);
-  localStorage.setItem('ll-lessons', JSON.stringify(lessons.slice(0, 50)));
-  showToast('課堂紀錄已儲存喺本機');
-  resetLesson();
+
+  try {
+    await lessonStore.saveLesson(lesson);
+    await lessonStore.clearDraft();
+    showToast('課堂紀錄已儲存喺本機');
+    resetLesson();
+  } catch (error) {
+    console.warn('[LiveLingo] Lesson save failed', error);
+    showToast('未能儲存課堂，內容仍然保留');
+  }
 }
 
 async function addSegment(rawText, source = 'web') {
@@ -374,6 +385,17 @@ async function correctRecentWithWhisper(rawText) {
 
 function handleWhisperTranscript(text) {
   if (!state.isListening || state.isPaused || state.languageDirection !== 'en-zh') return;
+
+  const now = Date.now();
+  const nearDuplicate = state.lastWhisperText &&
+    now - state.lastWhisperAt < 8000 &&
+    textSimilarity(text, state.lastWhisperText) >= 0.96;
+
+  if (nearDuplicate) return;
+
+  state.lastWhisperText = text;
+  state.lastWhisperAt = now;
+
   if (state.recognitionMode === 'offline') addSegment(text, 'whisper');
   if (state.recognitionMode === 'smart') setTimeout(() => correctRecentWithWhisper(text), 650);
 }
@@ -421,22 +443,33 @@ async function translateText(text, direction = state.languageDirection) {
   const language = LANGUAGE_DIRECTIONS[direction];
   const cacheKey = `${language.source}:${language.target}:${text}`;
   if (state.translationCache[cacheKey]) return state.translationCache[cacheKey];
-  try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${language.source}&tl=${language.target}&dt=t&q=${encodeURIComponent(text)}`;
-    const data = await fetchJsonWithTimeout(url);
-    const result = data[0].map((part) => part[0]).join('');
-    return cacheTranslation(cacheKey, result);
-  } catch (_) {
+  if (state.translationInflight.has(cacheKey)) return state.translationInflight.get(cacheKey);
+
+  const request = (async () => {
     try {
-      const fallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${language.source}|${language.target}`;
-      const fallbackData = await fetchJsonWithTimeout(fallbackUrl, 7500);
-      const result = fallbackData.responseData?.translatedText;
-      if (!result) throw new Error('empty fallback');
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${language.source}&tl=${language.target}&dt=t&q=${encodeURIComponent(text)}`;
+      const data = await fetchJsonWithTimeout(url);
+      const result = data[0].map((part) => part[0]).join('');
       return cacheTranslation(cacheKey, result);
     } catch (_) {
-      showToast(`翻譯服務暫時連唔到，${direction === 'en-zh' ? '英文' : '中文'}已保存`);
-      return direction === 'en-zh' ? '（翻譯暫時未能顯示）' : '(Translation unavailable)';
+      try {
+        const fallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${language.source}|${language.target}`;
+        const fallbackData = await fetchJsonWithTimeout(fallbackUrl, 7500);
+        const result = fallbackData.responseData?.translatedText;
+        if (!result) throw new Error('empty fallback');
+        return cacheTranslation(cacheKey, result);
+      } catch (_) {
+        showToast(`翻譯服務暫時連唔到，${direction === 'en-zh' ? '英文' : '中文'}已保存`);
+        return direction === 'en-zh' ? '（翻譯暫時未能顯示）' : '(Translation unavailable)';
+      }
     }
+  })();
+
+  state.translationInflight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    state.translationInflight.delete(cacheKey);
   }
 }
 
@@ -571,26 +604,31 @@ async function copyText(text, success = '已複製字幕內容') {
   catch (_) { showToast('未能複製，請再試一次'); }
 }
 
-function writeDraftNow() {
+async function writeDraftNow() {
   if (!state.currentLessonId) return;
   clearTimeout(state.draftSaveTimer);
   state.draftSaveTimer = null;
-  localStorage.setItem('ll-draft', JSON.stringify({
+  const draft = {
     id: state.currentLessonId,
     durationMs: lessonElapsed(),
     segments: state.segments
-  }));
+  };
+  try {
+    await lessonStore.saveDraft(draft);
+  } catch (error) {
+    console.warn('[LiveLingo] Draft save failed', error);
+  }
 }
 
 function persistDraft() {
   if (!state.currentLessonId) return;
   clearTimeout(state.draftSaveTimer);
-  state.draftSaveTimer = setTimeout(writeDraftNow, 700);
+  state.draftSaveTimer = setTimeout(() => { writeDraftNow(); }, 900);
 }
 
-function restoreDraft() {
+async function restoreDraft() {
   try {
-    const draft = JSON.parse(localStorage.getItem('ll-draft') || 'null');
+    const draft = await lessonStore.getDraft();
     if (!draft?.id || !draft.segments?.length) return;
     state.currentLessonId = draft.id;
     state.accumulatedMs = draft.durationMs || 0;
@@ -607,22 +645,28 @@ function restoreDraft() {
     state.isPaused = true;
     setVisualState('paused');
     showToast('已恢復上次未完成課堂');
-  } catch (_) {
-    localStorage.removeItem('ll-draft');
+  } catch (error) {
+    console.warn('[LiveLingo] Draft restore failed', error);
   }
 }
 
-function getLessons() {
-  try { return JSON.parse(localStorage.getItem('ll-lessons') || '[]'); } catch (_) { return []; }
-}
+async function renderHistory() {
+  elements.historyList.innerHTML = '<div class="history-empty">正在載入課堂紀錄…</div>';
+  let lessons = [];
+  try {
+    lessons = await lessonStore.getLessons();
+  } catch (error) {
+    console.warn('[LiveLingo] History load failed', error);
+    elements.historyList.innerHTML = '<div class="history-empty">未能載入課堂紀錄，請重新開啟 App。</div>';
+    return;
+  }
 
-function renderHistory() {
-  const lessons = getLessons();
   elements.historyList.innerHTML = '';
   if (!lessons.length) {
     elements.historyList.innerHTML = '<div class="history-empty">未有課堂紀錄。<br>完成第一堂後會自動存在呢部裝置。</div>';
     return;
   }
+
   lessons.forEach((lesson) => {
     const button = document.createElement('button');
     button.className = 'history-item';
@@ -804,7 +848,7 @@ elements.largeModeButton.addEventListener('click', () => {
   document.body.classList.toggle('large-mode', enabled);
   elements.largeModeButton.setAttribute('aria-pressed', String(enabled));
 });
-el('historyButton').addEventListener('click', () => { renderHistory(); elements.historyDialog.showModal(); });
+el('historyButton').addEventListener('click', () => { elements.historyDialog.showModal(); renderHistory(); });
 el('settingsButton').addEventListener('click', () => elements.settingsDialog.showModal());
 el('brandButton').addEventListener('click', () => document.body.classList.remove('large-mode'));
 document.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => el(button.dataset.close).close()));
@@ -846,11 +890,19 @@ document.querySelectorAll('input[name="whisperModel"]').forEach((input) => input
 }));
 elements.downloadWhisperButton.addEventListener('click', downloadWhisperModel);
 elements.deleteWhisperButton.addEventListener('click', deleteWhisperModel);
-el('clearHistoryButton').addEventListener('click', () => {
-  if (confirm('確定清除所有本機課堂紀錄？')) { localStorage.removeItem('ll-lessons'); renderHistory(); showToast('所有紀錄已清除'); }
+el('clearHistoryButton').addEventListener('click', async () => {
+  if (!confirm('確定清除所有本機課堂紀錄？')) return;
+  try {
+    await lessonStore.clearLessons();
+    await renderHistory();
+    showToast('所有紀錄已清除');
+  } catch (error) {
+    console.warn('[LiveLingo] History clear failed', error);
+    showToast('未能清除課堂紀錄');
+  }
 });
 
-window.addEventListener('beforeunload', writeDraftNow);
+window.addEventListener('pagehide', () => { writeDraftNow(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) writeDraftNow(); });
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
@@ -862,4 +914,13 @@ whisper?.setStatusHandler(({ status, detail }) => {
 updateLanguageDirectionUI();
 refreshWhisperModelState();
 setVisualState('idle');
-restoreDraft();
+
+(async () => {
+  try {
+    await lessonStore.init();
+    await restoreDraft();
+  } catch (error) {
+    console.warn('[LiveLingo] Local database initialization failed', error);
+    showToast('本機課堂資料庫暫時未能啟動');
+  }
+})();
