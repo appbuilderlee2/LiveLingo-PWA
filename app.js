@@ -1,7 +1,7 @@
 import { lessonStore } from './storage.js';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '2.5.0';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -32,7 +32,9 @@ const elements = {
   whisperModelName: el('whisperModelName'), whisperModelDetail: el('whisperModelDetail'),
   downloadWhisperButton: el('downloadWhisperButton'), deleteWhisperButton: el('deleteWhisperButton'), activeModeBadge: el('activeModeBadge'),
   translationDirectionLabel: el('translationDirectionLabel'), languageDirectionNote: el('languageDirectionNote'), largeModeLabel: el('largeModeLabel'),
-  captionStateBadge: el('captionStateBadge'), captionStateText: el('captionStateText')
+  captionStateBadge: el('captionStateBadge'), captionStateText: el('captionStateText'),
+  previousCaptionBlock: el('previousCaptionBlock'), previousChineseSubtitle: el('previousChineseSubtitle'),
+  previousEnglishSubtitle: el('previousEnglishSubtitle')
 };
 
 const state = {
@@ -96,13 +98,51 @@ function setCaptionState(mode, text) {
   elements.captionStateText.textContent = text;
 }
 
+function captionDensity(text, element) {
+  const clean = String(text || '').trim();
+  if (!clean) return '';
+  const isChinese = element === elements.chineseSubtitle;
+  const length = isChinese ? [...clean].length : clean.split(/\s+/).filter(Boolean).length;
+
+  if ((isChinese && length >= 52) || (!isChinese && length >= 30)) return 'caption-xlong';
+  if ((isChinese && length >= 36) || (!isChinese && length >= 22)) return 'caption-long';
+  if ((isChinese && length >= 24) || (!isChinese && length >= 15)) return 'caption-medium';
+  return '';
+}
+
 function updateCaptionText(element, text, placeholder = false) {
   const next = text || '';
-  if (element.textContent === next && element.classList.contains('placeholder') === placeholder) return;
+  const density = captionDensity(next, element);
+  const sameText = element.dataset.rawText === next;
+  const samePlaceholder = element.classList.contains('placeholder') === placeholder;
+  const sameDensity = ['caption-medium', 'caption-long', 'caption-xlong'].every((name) =>
+    element.classList.contains(name) === (name === density)
+  );
+  if (sameText && samePlaceholder && sameDensity) return;
+
+  element.dataset.rawText = next;
   element.classList.add('caption-refresh');
   element.textContent = next;
   element.classList.toggle('placeholder', placeholder);
+  element.classList.remove('caption-medium', 'caption-long', 'caption-xlong');
+  if (density) element.classList.add(density);
   requestAnimationFrame(() => requestAnimationFrame(() => element.classList.remove('caption-refresh')));
+}
+
+function updatePreviousCaption(useLatestCompleted = false) {
+  const index = useLatestCompleted ? state.segments.length - 1 : state.segments.length - 2;
+  const segment = index >= 0 ? state.segments[index] : null;
+
+  if (!segment) {
+    elements.previousCaptionBlock.hidden = true;
+    elements.previousChineseSubtitle.textContent = '';
+    elements.previousEnglishSubtitle.textContent = '';
+    return;
+  }
+
+  elements.previousChineseSubtitle.textContent = segment.zh || '';
+  elements.previousEnglishSubtitle.textContent = segment.en || '';
+  elements.previousCaptionBlock.hidden = !(segment.zh || segment.en);
 }
 
 function setSubtitlePlaceholders() {
@@ -115,6 +155,9 @@ function setSubtitlePlaceholders() {
   }
   elements.chineseSubtitle.classList.add('placeholder');
   elements.englishSubtitle.classList.add('placeholder');
+  elements.chineseSubtitle.classList.remove('caption-medium', 'caption-long', 'caption-xlong');
+  elements.englishSubtitle.classList.remove('caption-medium', 'caption-long', 'caption-xlong');
+  elements.previousCaptionBlock.hidden = true;
   setCaptionState('idle', '等待開始');
 }
 
@@ -149,6 +192,7 @@ function createRecognition() {
     const liveText = interim.trim();
     elements.interimText.textContent = liveText ? '正在辨識下一句…' : '';
     if (liveText && !hasFinal) {
+      updatePreviousCaption(true);
       setCaptionState('interim', '字幕會隨說話更新');
       scheduleInterimTranslation(liveText);
     }
@@ -604,6 +648,7 @@ function updateSegment(segment) {
 
 function updateStage(segment) {
   if (segment !== state.segments.at(-1)) return;
+  updatePreviousCaption(false);
   const direction = segment.direction || 'en-zh';
   updateCaptionText(
     elements.englishSubtitle,
