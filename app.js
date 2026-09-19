@@ -1,7 +1,7 @@
 import { lessonStore } from './storage.js';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.0';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -48,6 +48,8 @@ const state = {
   interimTimer: null,
   interimToken: 0,
   lastInterim: '',
+  lastInterimTranslatedText: '',
+  lastInterimRequestAt: 0,
   recognitionMode: localStorage.getItem('ll-recognition-mode') || 'realtime',
   languageDirection: localStorage.getItem('ll-language-direction') || 'en-zh',
   whisperModel: localStorage.getItem('ll-whisper-model') || 'tiny-en-q5_1',
@@ -201,6 +203,7 @@ function pauseListening(fromError = false) {
   state.shouldRestart = false;
   state.interimToken += 1;
   state.lastInterim = '';
+  state.lastInterimTranslatedText = '';
   clearTimeout(state.interimTimer);
   elements.interimText.textContent = '';
   try { state.recognition?.stop(); } catch (_) {}
@@ -433,31 +436,65 @@ function handleWhisperTranscript(text) {
   if (state.recognitionMode === 'smart') setTimeout(() => correctRecentWithWhisper(text), 650);
 }
 
+function interimTranslationDelay(text) {
+  const trimmed = text.trim();
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+  const sentenceEnded = /[.!?。！？]$/.test(trimmed);
+
+  if (sentenceEnded) return 180;
+  if (wordCount <= 3) return 260;
+  if (wordCount <= 8) return 340;
+  if (wordCount <= 16) return 430;
+  return 520;
+}
+
 function scheduleInterimTranslation(text) {
   if (!state.translate || text.length < 3 || text === state.lastInterim) return;
   state.lastInterim = text;
   const direction = state.languageDirection;
   clearTimeout(state.interimTimer);
   const token = ++state.interimToken;
+
   if (direction === 'en-zh') {
     elements.englishSubtitle.textContent = text;
     elements.englishSubtitle.classList.remove('placeholder');
-    elements.chineseSubtitle.textContent = '即時翻譯中…';
-    elements.chineseSubtitle.classList.add('placeholder');
+    if (!elements.chineseSubtitle.textContent || elements.chineseSubtitle.classList.contains('placeholder')) {
+      elements.chineseSubtitle.textContent = '即時翻譯中…';
+      elements.chineseSubtitle.classList.add('placeholder');
+    }
   } else {
     elements.chineseSubtitle.textContent = text;
     elements.chineseSubtitle.classList.remove('placeholder');
-    elements.englishSubtitle.textContent = 'Translating…';
-    elements.englishSubtitle.classList.add('placeholder');
+    if (!elements.englishSubtitle.textContent || elements.englishSubtitle.classList.contains('placeholder')) {
+      elements.englishSubtitle.textContent = 'Translating…';
+      elements.englishSubtitle.classList.add('placeholder');
+    }
+  }
+
+  const now = Date.now();
+  const minimumRequestGap = 450;
+  const sinceLastRequest = now - state.lastInterimRequestAt;
+  const throttleDelay = Math.max(0, minimumRequestGap - sinceLastRequest);
+
+  let delay = Math.max(interimTranslationDelay(text), throttleDelay);
+  const previous = state.lastInterimTranslatedText.trim();
+  const current = text.trim();
+  if (previous && current.startsWith(previous)) {
+    const growth = current.length - previous.length;
+    if (growth > 0 && growth < 5) delay = Math.max(delay, 520);
   }
 
   state.interimTimer = setTimeout(async () => {
+    if (token !== state.interimToken || !state.isListening || direction !== state.languageDirection) return;
+    state.lastInterimRequestAt = Date.now();
+    state.lastInterimTranslatedText = text;
+
     const translated = await translateText(text, direction);
     if (token !== state.interimToken || !state.isListening || direction !== state.languageDirection) return;
     const targetElement = direction === 'en-zh' ? elements.chineseSubtitle : elements.englishSubtitle;
     targetElement.textContent = translated;
     targetElement.classList.remove('placeholder');
-  }, 550);
+  }, delay);
 }
 
 async function fetchJsonWithTimeout(url, timeoutMs = 6500) {
