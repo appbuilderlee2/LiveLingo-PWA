@@ -256,6 +256,7 @@ async function finishLesson() {
 async function addSegment(rawText, source = 'web') {
   state.interimToken += 1;
   state.lastInterim = '';
+  state.lastInterimTranslatedText = '';
   clearTimeout(state.interimTimer);
   const direction = state.languageDirection;
   const sourceText = punctuate(rawText, direction);
