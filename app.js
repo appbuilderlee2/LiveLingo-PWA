@@ -1,7 +1,7 @@
 import { lessonStore } from './storage.js';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '2.3.0';
+const APP_VERSION = '2.4.0';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -31,7 +31,8 @@ const elements = {
   whisperProgressText: el('whisperProgressText'),
   whisperModelName: el('whisperModelName'), whisperModelDetail: el('whisperModelDetail'),
   downloadWhisperButton: el('downloadWhisperButton'), deleteWhisperButton: el('deleteWhisperButton'), activeModeBadge: el('activeModeBadge'),
-  translationDirectionLabel: el('translationDirectionLabel'), languageDirectionNote: el('languageDirectionNote'), largeModeLabel: el('largeModeLabel')
+  translationDirectionLabel: el('translationDirectionLabel'), languageDirectionNote: el('languageDirectionNote'), largeModeLabel: el('largeModeLabel'),
+  captionStateBadge: el('captionStateBadge'), captionStateText: el('captionStateText')
 };
 
 const state = {
@@ -89,6 +90,21 @@ function showToast(message) {
   showToast.timer = setTimeout(() => elements.toast.classList.remove('show'), 2200);
 }
 
+function setCaptionState(mode, text) {
+  elements.subtitleStage.classList.toggle('interim-active', mode === 'interim');
+  elements.captionStateBadge.textContent = mode === 'interim' ? '正在講' : mode === 'paused' ? '已暫停' : '最新字幕';
+  elements.captionStateText.textContent = text;
+}
+
+function updateCaptionText(element, text, placeholder = false) {
+  const next = text || '';
+  if (element.textContent === next && element.classList.contains('placeholder') === placeholder) return;
+  element.classList.add('caption-refresh');
+  element.textContent = next;
+  element.classList.toggle('placeholder', placeholder);
+  requestAnimationFrame(() => requestAnimationFrame(() => element.classList.remove('caption-refresh')));
+}
+
 function setSubtitlePlaceholders() {
   if (state.languageDirection === 'zh-en') {
     elements.englishSubtitle.textContent = 'Tap the microphone to translate Chinese into English.';
@@ -99,6 +115,7 @@ function setSubtitlePlaceholders() {
   }
   elements.chineseSubtitle.classList.add('placeholder');
   elements.englishSubtitle.classList.add('placeholder');
+  setCaptionState('idle', '等待開始');
 }
 
 function setVisualState(mode) {
@@ -109,6 +126,8 @@ function setVisualState(mode) {
   elements.micLabel.textContent = mode === 'listening' ? 'Pause' : mode === 'paused' ? 'Resume' : 'Start Listening';
   elements.micButton.setAttribute('aria-label', elements.micLabel.textContent);
   elements.finishButton.hidden = mode === 'idle';
+  if (mode === 'paused') setCaptionState('paused', '字幕已保留');
+  else if (mode === 'idle') setCaptionState('idle', '等待開始');
 }
 
 function createRecognition() {
@@ -128,8 +147,11 @@ function createRecognition() {
       else interim += `${text} `;
     }
     const liveText = interim.trim();
-    elements.interimText.textContent = liveText ? `Listening: ${liveText}` : '';
-    if (liveText && !hasFinal) scheduleInterimTranslation(liveText);
+    elements.interimText.textContent = liveText ? '正在辨識下一句…' : '';
+    if (liveText && !hasFinal) {
+      setCaptionState('interim', '字幕會隨說話更新');
+      scheduleInterimTranslation(liveText);
+    }
   };
 
   recognition.onerror = (event) => {
@@ -457,18 +479,14 @@ function scheduleInterimTranslation(text) {
   const token = ++state.interimToken;
 
   if (direction === 'en-zh') {
-    elements.englishSubtitle.textContent = text;
-    elements.englishSubtitle.classList.remove('placeholder');
+    updateCaptionText(elements.englishSubtitle, text, false);
     if (!elements.chineseSubtitle.textContent || elements.chineseSubtitle.classList.contains('placeholder')) {
-      elements.chineseSubtitle.textContent = '即時翻譯中…';
-      elements.chineseSubtitle.classList.add('placeholder');
+      updateCaptionText(elements.chineseSubtitle, '即時翻譯中…', true);
     }
   } else {
-    elements.chineseSubtitle.textContent = text;
-    elements.chineseSubtitle.classList.remove('placeholder');
+    updateCaptionText(elements.chineseSubtitle, text, false);
     if (!elements.englishSubtitle.textContent || elements.englishSubtitle.classList.contains('placeholder')) {
-      elements.englishSubtitle.textContent = 'Translating…';
-      elements.englishSubtitle.classList.add('placeholder');
+      updateCaptionText(elements.englishSubtitle, 'Translating…', true);
     }
   }
 
@@ -493,8 +511,8 @@ function scheduleInterimTranslation(text) {
     const translated = await translateText(text, direction);
     if (token !== state.interimToken || !state.isListening || direction !== state.languageDirection) return;
     const targetElement = direction === 'en-zh' ? elements.chineseSubtitle : elements.englishSubtitle;
-    targetElement.textContent = translated;
-    targetElement.classList.remove('placeholder');
+    updateCaptionText(targetElement, translated, false);
+    setCaptionState('interim', '即時翻譯');
   }, delay);
 }
 
@@ -587,10 +605,17 @@ function updateSegment(segment) {
 function updateStage(segment) {
   if (segment !== state.segments.at(-1)) return;
   const direction = segment.direction || 'en-zh';
-  elements.englishSubtitle.textContent = segment.en || (segment.translating && direction === 'zh-en' ? 'Translating…' : '');
-  elements.chineseSubtitle.textContent = segment.zh || (segment.translating && direction === 'en-zh' ? '翻譯中…' : '');
-  elements.englishSubtitle.classList.toggle('placeholder', segment.translating && direction === 'zh-en');
-  elements.chineseSubtitle.classList.toggle('placeholder', segment.translating && direction === 'en-zh');
+  updateCaptionText(
+    elements.englishSubtitle,
+    segment.en || (segment.translating && direction === 'zh-en' ? 'Translating…' : ''),
+    segment.translating && direction === 'zh-en'
+  );
+  updateCaptionText(
+    elements.chineseSubtitle,
+    segment.zh || (segment.translating && direction === 'en-zh' ? '翻譯中…' : ''),
+    segment.translating && direction === 'en-zh'
+  );
+  setCaptionState(segment.translating ? 'interim' : 'complete', segment.translating ? '翻譯處理中' : '已完成');
 }
 
 function transcriptText(segments = state.segments) {

@@ -40,6 +40,10 @@
         </section>
 
         <section class="subtitle-stage" id="subtitleStage" aria-live="polite" aria-atomic="true">
+          <div class="caption-state-row">
+            <span id="captionStateBadge" class="caption-state-badge">最新字幕</span>
+            <span id="captionStateText" class="caption-state-text">等待開始</span>
+          </div>
           <p class="chinese-subtitle placeholder" id="chineseSubtitle">撳下面咪高峰，開始即時字幕</p>
           <div class="sound-rule" aria-hidden="true"><span></span><b><i></i><i></i><i></i><i></i><i></i></b><span></span></div>
           <p class="english-subtitle placeholder" id="englishSubtitle">Tap the microphone to start English recognition.</p>
@@ -47,6 +51,7 @@
         </section>
 
         <section class="transcript-section" aria-label="字幕紀錄">
+          <div class="transcript-heading"><span>已完成字幕</span><small>自動保存</small></div>
           <div class="transcript-empty" id="transcriptEmpty">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18v3M8 21h8M8 11a4 4 0 0 0 8 0V6a4 4 0 1 0-8 0v5Z"/><path d="M5 11a7 7 0 0 0 14 0"/></svg>
             <p>語音原文會顯示喺度，翻譯完成後會自動加入中英字幕。</p>
@@ -156,7 +161,7 @@
       </section>
       <section class="about-card">
         <div><h3>關於 LiveLingo</h3><p>中英文即時語音辨識及雙向翻譯字幕</p></div>
-        <div class="version-row"><span>版本</span><strong id="versionLabel">v2.3.0</strong></div>
+        <div class="version-row"><span>版本</span><strong id="versionLabel">v2.4.0</strong></div>
       </section>
     </dialog>
 
