@@ -1,7 +1,7 @@
 import { lessonStore } from './storage.js';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '2.5.0';
+const APP_VERSION = '2.5.1';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -63,6 +63,7 @@ const state = {
   translationCache: JSON.parse(localStorage.getItem('ll-translation-cache') ?? '{}'),
   translationCacheSaveTimer: null,
   translationInflight: new Map(),
+  interimTranslationController: null,
   draftSaveTimer: null,
   lastWhisperText: '',
   lastWhisperAt: 0
@@ -268,6 +269,8 @@ function pauseListening(fromError = false) {
   state.isPaused = true;
   state.shouldRestart = false;
   state.interimToken += 1;
+  state.interimTranslationController?.abort();
+  state.interimTranslationController = null;
   state.lastInterim = '';
   state.lastInterimTranslatedText = '';
   clearTimeout(state.interimTimer);
@@ -321,6 +324,8 @@ async function finishLesson() {
 
 async function addSegment(rawText, source = 'web') {
   state.interimToken += 1;
+  state.interimTranslationController?.abort();
+  state.interimTranslationController = null;
   state.lastInterim = '';
   state.lastInterimTranslatedText = '';
   clearTimeout(state.interimTimer);
@@ -339,9 +344,11 @@ async function addSegment(rawText, source = 'web') {
   persistDraft();
   if (state.translate) {
     const token = ++segment.translationToken;
-    const translated = await translateText(sourceText, direction);
+    const translated = await translateText(sourceText, direction, { notify: true });
     if (token !== segment.translationToken) return;
-    if (direction === 'en-zh') segment.zh = translated; else segment.en = translated;
+    if (translated) {
+      if (direction === 'en-zh') segment.zh = translated; else segment.en = translated;
+    }
     segment.translating = false;
     updateSegment(segment);
     updateStage(segment);
@@ -468,9 +475,9 @@ async function correctRecentWithWhisper(rawText) {
 
   if (state.translate) {
     const token = ++primary.translationToken;
-    const translated = await translateText(en, 'en-zh');
+    const translated = await translateText(en, 'en-zh', { notify: true });
     if (token !== primary.translationToken) return;
-    primary.zh = translated;
+    if (translated) primary.zh = translated;
     primary.translating = false;
     updateSegment(primary);
     updateStage(primary);
@@ -517,6 +524,8 @@ function interimTranslationDelay(text) {
 
 function scheduleInterimTranslation(text) {
   if (!state.translate || text.length < 3 || text === state.lastInterim) return;
+  state.interimTranslationController?.abort();
+  state.interimTranslationController = null;
   state.lastInterim = text;
   const direction = state.languageDirection;
   clearTimeout(state.interimTimer);
@@ -551,17 +560,28 @@ function scheduleInterimTranslation(text) {
     if (token !== state.interimToken || !state.isListening || direction !== state.languageDirection) return;
     state.lastInterimRequestAt = Date.now();
     state.lastInterimTranslatedText = text;
+    const controller = new AbortController();
+    state.interimTranslationController = controller;
 
-    const translated = await translateText(text, direction);
-    if (token !== state.interimToken || !state.isListening || direction !== state.languageDirection) return;
-    const targetElement = direction === 'en-zh' ? elements.chineseSubtitle : elements.englishSubtitle;
-    updateCaptionText(targetElement, translated, false);
-    setCaptionState('interim', '即時翻譯');
+    try {
+      const translated = await translateText(text, direction, { signal: controller.signal, notify: false });
+      if (!translated || token !== state.interimToken || !state.isListening || direction !== state.languageDirection) return;
+      const targetElement = direction === 'en-zh' ? elements.chineseSubtitle : elements.englishSubtitle;
+      updateCaptionText(targetElement, translated, false);
+      setCaptionState('interim', '即時翻譯');
+    } catch (error) {
+      if (error?.name !== 'AbortError') console.warn('[LiveLingo] Interim translation failed', error);
+    } finally {
+      if (state.interimTranslationController === controller) state.interimTranslationController = null;
+    }
   }, delay);
 }
 
-async function fetchJsonWithTimeout(url, timeoutMs = 6500) {
+async function fetchJsonWithTimeout(url, timeoutMs = 15000, externalSignal) {
   const controller = new AbortController();
+  const abortFromExternal = () => controller.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) abortFromExternal();
+  else externalSignal?.addEventListener('abort', abortFromExternal, { once: true });
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { signal: controller.signal });
@@ -569,40 +589,44 @@ async function fetchJsonWithTimeout(url, timeoutMs = 6500) {
     return await response.json();
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener('abort', abortFromExternal);
   }
 }
 
-async function translateText(text, direction = state.languageDirection) {
+async function translateText(text, direction = state.languageDirection, options = {}) {
+  const { signal, notify = false } = options;
   const language = LANGUAGE_DIRECTIONS[direction];
   const cacheKey = `${language.source}:${language.target}:${text}`;
   if (state.translationCache[cacheKey]) return state.translationCache[cacheKey];
-  if (state.translationInflight.has(cacheKey)) return state.translationInflight.get(cacheKey);
+  if (!signal && state.translationInflight.has(cacheKey)) return state.translationInflight.get(cacheKey);
 
   const request = (async () => {
     try {
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${language.source}&tl=${language.target}&dt=t&q=${encodeURIComponent(text)}`;
-      const data = await fetchJsonWithTimeout(url);
+      const data = await fetchJsonWithTimeout(url, 15000, signal);
       const result = data[0].map((part) => part[0]).join('');
       return cacheTranslation(cacheKey, result);
-    } catch (_) {
+    } catch (error) {
+      if (signal?.aborted || error?.name === 'AbortError') throw error;
       try {
         const fallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${language.source}|${language.target}`;
-        const fallbackData = await fetchJsonWithTimeout(fallbackUrl, 7500);
+        const fallbackData = await fetchJsonWithTimeout(fallbackUrl, 15000, signal);
         const result = fallbackData.responseData?.translatedText;
         if (!result) throw new Error('empty fallback');
         return cacheTranslation(cacheKey, result);
-      } catch (_) {
-        showToast(`翻譯服務暫時連唔到，${direction === 'en-zh' ? '英文' : '中文'}已保存`);
-        return direction === 'en-zh' ? '（翻譯暫時未能顯示）' : '(Translation unavailable)';
+      } catch (fallbackError) {
+        if (signal?.aborted || fallbackError?.name === 'AbortError') throw fallbackError;
+        if (notify) showToast(`翻譯服務暫時連唔到，${direction === 'en-zh' ? '英文' : '中文'}已保存`);
+        return null;
       }
     }
   })();
 
-  state.translationInflight.set(cacheKey, request);
+  if (!signal) state.translationInflight.set(cacheKey, request);
   try {
     return await request;
   } finally {
-    state.translationInflight.delete(cacheKey);
+    if (!signal) state.translationInflight.delete(cacheKey);
   }
 }
 
@@ -1018,7 +1042,14 @@ el('autoScrollToggle').checked = state.autoScroll;
 el('translationToggle').checked = state.translate;
 el('versionLabel').textContent = `v${APP_VERSION}`;
 el('autoScrollToggle').addEventListener('change', (event) => { state.autoScroll = event.target.checked; localStorage.setItem('ll-auto-scroll', state.autoScroll); });
-el('translationToggle').addEventListener('change', (event) => { state.translate = event.target.checked; localStorage.setItem('ll-translate', state.translate); });
+el('translationToggle').addEventListener('change', (event) => {
+  state.translate = event.target.checked;
+  localStorage.setItem('ll-translate', state.translate);
+  if (!state.translate) {
+    state.interimTranslationController?.abort();
+    state.interimTranslationController = null;
+  }
+});
 document.querySelectorAll('input[name="languageDirection"]').forEach((input) => input.addEventListener('change', (event) => {
   if (state.isListening) pauseListening(true);
   try { state.recognition?.abort(); } catch (_) {}

@@ -1,6 +1,6 @@
 # LiveLingo PWA
 
-Current app version: **v2.5.0**
+Current app version: **v2.5.1**
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
@@ -107,3 +107,10 @@ The whisper.cpp WebAssembly runtime is provided by the official project under it
 - Long Chinese and English captions automatically step down through several font-size tiers instead of forcing large layout jumps.
 - Uses natural browser line wrapping with `text-wrap: pretty` and safer word breaking for long classroom terminology.
 - Large-caption mode also keeps the previous sentence and applies separate scaling tiers for long text.
+
+
+## v2.5.1 translation reliability
+
+- Allows up to 15 seconds for slow Google and MyMemory translation responses instead of failing after 6.5 seconds.
+- Cancels obsolete interim translation requests whenever the live transcript changes, preventing a long lesson from building up a large network backlog.
+- A temporary provider failure no longer replaces readable captions with a failure message; the recognized source sentence remains saved and visible.
