@@ -1,7 +1,7 @@
 import { lessonStore } from './storage.js';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '2.5.1';
+const APP_VERSION = '2.5.2';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -602,22 +602,35 @@ async function translateText(text, direction = state.languageDirection, options 
 
   const request = (async () => {
     try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${language.source}&tl=${language.target}&dt=t&q=${encodeURIComponent(text)}`;
+      const url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${language.source}&tl=${language.target}&q=${encodeURIComponent(text)}`;
       const data = await fetchJsonWithTimeout(url, 15000, signal);
-      const result = data[0].map((part) => part[0]).join('');
+      const result = Array.isArray(data) ? data.filter((part) => typeof part === 'string').join('') : '';
+      if (!result) throw new Error('empty primary translation');
       return cacheTranslation(cacheKey, result);
     } catch (error) {
       if (signal?.aborted || error?.name === 'AbortError') throw error;
+      console.warn('[LiveLingo] Primary Google translation failed', error);
       try {
-        const fallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${language.source}|${language.target}`;
-        const fallbackData = await fetchJsonWithTimeout(fallbackUrl, 15000, signal);
-        const result = fallbackData.responseData?.translatedText;
-        if (!result) throw new Error('empty fallback');
+        const fallbackUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${language.source}&tl=${language.target}&dt=t&q=${encodeURIComponent(text)}`;
+        const fallbackData = await fetchJsonWithTimeout(fallbackUrl, 12000, signal);
+        const result = fallbackData[0].map((part) => part[0]).join('');
+        if (!result) throw new Error('empty Google fallback');
         return cacheTranslation(cacheKey, result);
       } catch (fallbackError) {
         if (signal?.aborted || fallbackError?.name === 'AbortError') throw fallbackError;
-        if (notify) showToast(`翻譯服務暫時連唔到，${direction === 'en-zh' ? '英文' : '中文'}已保存`);
-        return null;
+        console.warn('[LiveLingo] Google fallback translation failed', fallbackError);
+        try {
+          const lastFallbackUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${language.source}|${language.target}`;
+          const lastFallbackData = await fetchJsonWithTimeout(lastFallbackUrl, 12000, signal);
+          const result = lastFallbackData.responseData?.translatedText;
+          if (!result) throw new Error('empty MyMemory fallback');
+          return cacheTranslation(cacheKey, result);
+        } catch (lastFallbackError) {
+          if (signal?.aborted || lastFallbackError?.name === 'AbortError') throw lastFallbackError;
+          console.warn('[LiveLingo] MyMemory fallback translation failed', lastFallbackError);
+          if (notify) showToast(`翻譯服務暫時連唔到，${direction === 'en-zh' ? '英文' : '中文'}已保存`);
+          return null;
+        }
       }
     }
   })();

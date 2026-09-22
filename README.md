@@ -1,6 +1,6 @@
 # LiveLingo PWA
 
-Current app version: **v2.5.1**
+Current app version: **v2.5.2**
 
 Mobile-first English speech recognition with Traditional Chinese live subtitles.
 
@@ -114,3 +114,10 @@ The whisper.cpp WebAssembly runtime is provided by the official project under it
 - Allows up to 15 seconds for slow Google and MyMemory translation responses instead of failing after 6.5 seconds.
 - Cancels obsolete interim translation requests whenever the live transcript changes, preventing a long lesson from building up a large network backlog.
 - A temporary provider failure no longer replaces readable captions with a failure message; the recognized source sentence remains saved and visible.
+
+
+## v2.5.2 translation endpoint recovery
+
+- Uses Google's browser-compatible `clients5.google.com` translation endpoint as the primary provider after the previous endpoint began returning HTTP 500 responses.
+- Keeps the previous Google endpoint and MyMemory as ordered fallbacks.
+- Logs the failing provider and error in the browser console while preserving recognized source captions in the interface.
