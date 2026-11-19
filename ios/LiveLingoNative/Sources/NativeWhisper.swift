@@ -80,7 +80,7 @@ final class NativeWhisper: ObservableObject {
                 guard let pipeline else { break }
                 status = "Whisper 本地轉錄中"
                 let results = try await pipeline.transcribe(audioPath: url.path)
-                let text = (results?.map(\.text).joined(separator: " ") ?? "")
+                let text = (results?.text ?? "")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !text.isEmpty {
                     latestText = text
