@@ -1,7 +1,7 @@
 import { lessonStore } from './storage.js';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '2.5.2';
+const APP_VERSION = '2.5.3';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -664,9 +664,9 @@ function renderSegment(segment) {
   li.className = 'transcript-item';
   li.dataset.id = segment.id;
   li.innerHTML = `<time class="transcript-time">${formatClock(segment.atMs).slice(3)}</time><div class="transcript-copy"><p class="zh"></p><p class="en"></p><small class="correction-label" hidden>✓ Whisper 校正</small></div>`;
-  elements.transcriptList.appendChild(li);
+  elements.transcriptList.prepend(li);
   updateSegment(segment);
-  if (state.autoScroll) li.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  if (state.autoScroll) elements.transcriptList.parentElement.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function updateSegment(segment) {
@@ -931,7 +931,7 @@ function updateWhisperUI(status = state.whisperStatus, detail = '') {
     elements.whisperCompatibility.classList.add('warning');
     elements.downloadWhisperButton.disabled = true;
   } else if (!window.crossOriginIsolated) {
-    elements.whisperCompatibility.textContent = '首次更新後請完全關閉並重新開啟 App，才可啟用 Whisper 安全運算模式。';
+    elements.whisperCompatibility.textContent = 'Whisper 安全運算模式尚未啟用（跨來源隔離未生效）。請確認網站伺服器有設定 COOP: same-origin 及 COEP: credentialless；單純重開 App 未必能解決。';
     elements.whisperCompatibility.classList.add('warning');
     elements.downloadWhisperButton.disabled = false;
   } else {
