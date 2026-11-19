@@ -20,3 +20,6 @@ This is an **experimental native SwiftUI app**, separate from the existing PWA.
 - Translation is currently English → Traditional Chinese; language direction settings and native whisper.cpp model downloads are future work.
 - Live recognition may produce a long segment before finalization; segmentation needs real-device tuning.
 - Build and runtime are not yet verified on physical hardware.
+
+## CI
+Pushing changes under this iOS directory automatically triggers the unsigned iOS IPA build workflow on GitHub Actions.
