@@ -6,7 +6,7 @@ This is an **experimental native SwiftUI app**, separate from the existing PWA.
 - On-device speech recognition uses Apple Speech with `requiresOnDeviceRecognition = true`. Recognition availability varies by language/device.
 - Translation uses Apple's Translation framework. Language downloads and OS support are required; test on iPhone.
 - History is stored locally in UserDefaults.
-- **Native whisper.cpp is not yet integrated.** This prototype is not a production replacement for the PWA.
+- Native Whisper integration uses **WhisperKit / Core ML**, not whisper.cpp. It downloads the tiny model on first use and transcribes local ~8-second microphone chunks. This is a first implementation, not yet verified on hardware.
 - No backend. No API key.
 
 ## Build
@@ -17,9 +17,9 @@ This is an **experimental native SwiftUI app**, separate from the existing PWA.
 
 ## Limitations
 - First translation may prompt for language pack download.
-- Translation is currently English → Traditional Chinese; language direction settings and native whisper.cpp model downloads are future work.
+- Translation is currently English → Traditional Chinese; bidirectional language settings and selectable Whisper models are future work.
 - Live recognition may produce a long segment before finalization; segmentation needs real-device tuning.
-- Build and runtime are not yet verified on physical hardware.
+- Build and runtime are not yet verified on physical hardware. GitHub Actions may require fixes after the first actual build.
 
 ## CI
 Pushing changes under this iOS directory automatically triggers the unsigned iOS IPA build workflow on GitHub Actions.
