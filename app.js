@@ -1,7 +1,7 @@
 import { lessonStore } from './storage.js';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '2.5.3';
+const APP_VERSION = '2.5.4';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -931,7 +931,7 @@ function updateWhisperUI(status = state.whisperStatus, detail = '') {
     elements.whisperCompatibility.classList.add('warning');
     elements.downloadWhisperButton.disabled = true;
   } else if (!window.crossOriginIsolated) {
-    elements.whisperCompatibility.textContent = 'Whisper 安全運算模式尚未啟用（跨來源隔離未生效）。請確認網站伺服器有設定 COOP: same-origin 及 COEP: credentialless；單純重開 App 未必能解決。';
+    elements.whisperCompatibility.textContent = 'Whisper 安全模式未啟用。' + (!navigator.serviceWorker?.controller ? '此頁尚未受離線服務控制；請等更新完成後重新載入一次。' : '服務已控制頁面，但瀏覽器仍未提供跨來源隔離；請檢查 iOS 支援及網站回應標頭。') + ' (isolated=' + Boolean(window.crossOriginIsolated) + ', SAB=' + (typeof SharedArrayBuffer !== 'undefined') + ')'';
     elements.whisperCompatibility.classList.add('warning');
     elements.downloadWhisperButton.disabled = false;
   } else {
@@ -1107,7 +1107,22 @@ el('clearHistoryButton').addEventListener('click', async () => {
 window.addEventListener('pagehide', () => { writeDraftNow(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) writeDraftNow(); });
 
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+if ('serviceWorker' in navigator) window.addEventListener('load', async () => {
+  try {
+    await navigator.serviceWorker.register('./sw.js');
+    await navigator.serviceWorker.ready;
+    // A newly installed worker cannot modify the document response already loaded.
+    // Reload once per tab only after a controller takes over; never create a reload loop.
+    if (!navigator.serviceWorker.controller && !sessionStorage.getItem('ll-isolation-reload-v254')) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!sessionStorage.getItem('ll-isolation-reload-v254')) {
+          sessionStorage.setItem('ll-isolation-reload-v254', '1');
+          window.location.reload();
+        }
+      }, { once: true });
+    }
+  } catch (error) { console.warn('Service worker registration failed', error); }
+});
 whisper?.setTranscriptHandler(handleWhisperTranscript);
 whisper?.setStatusHandler(({ status, detail }) => {
   if (status === 'runtime-ready' && state.whisperInstalled) updateWhisperUI('ready');
