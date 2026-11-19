@@ -1,7 +1,7 @@
 import { lessonStore } from './storage.js';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const APP_VERSION = '2.5.4';
+const APP_VERSION = '2.5.5';
 const whisper = window.LiveLingoWhisper;
 const WHISPER_MODELS = whisper?.models || {
   'tiny-en-q5_1': { name: 'tiny.en Q5_1', sizeMb: 31 },
@@ -931,7 +931,7 @@ function updateWhisperUI(status = state.whisperStatus, detail = '') {
     elements.whisperCompatibility.classList.add('warning');
     elements.downloadWhisperButton.disabled = true;
   } else if (!window.crossOriginIsolated) {
-    elements.whisperCompatibility.textContent = 'Whisper 安全模式未啟用。' + (!navigator.serviceWorker?.controller ? '此頁尚未受離線服務控制；請等更新完成後重新載入一次。' : '服務已控制頁面，但瀏覽器仍未提供跨來源隔離；請檢查 iOS 支援及網站回應標頭。') + ' (isolated=' + Boolean(window.crossOriginIsolated) + ', SAB=' + (typeof SharedArrayBuffer !== 'undefined') + ')'';
+    elements.whisperCompatibility.textContent = 'Whisper 安全模式未啟用。' + (!navigator.serviceWorker?.controller ? '此頁尚未受離線服務控制；請等更新完成後重新載入一次。' : '服務已控制頁面，但瀏覽器仍未提供跨來源隔離；請檢查 iOS 支援及網站回應標頭。') + ' (isolated=' + Boolean(window.crossOriginIsolated) + ', SAB=' + (typeof SharedArrayBuffer !== 'undefined') + ')';
     elements.whisperCompatibility.classList.add('warning');
     elements.downloadWhisperButton.disabled = false;
   } else {
