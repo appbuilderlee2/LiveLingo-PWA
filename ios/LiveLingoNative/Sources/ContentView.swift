@@ -45,9 +45,11 @@ final class LocalSpeech: ObservableObject {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var lastFinal = ""
+    private var onFinalCallback: ((String) -> Void)?
 
     func start(onFinal: @escaping (String) -> Void) async {
         guard !isListening else { return }
+        onFinalCallback = onFinal
         let speechAuthorized = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
         }
@@ -101,6 +103,11 @@ final class LocalSpeech: ObservableObject {
     }
 
     func stop() {
+        if !liveText.isEmpty && liveText != lastFinal {
+            lastFinal = liveText
+            onFinalCallback?(liveText)
+        }
+        liveText = ""
         if engine.isRunning { engine.stop() }
         engine.inputNode.removeTap(onBus: 0)
         request?.endAudio()
@@ -108,6 +115,7 @@ final class LocalSpeech: ObservableObject {
         request = nil
         task = nil
         isListening = false
+        onFinalCallback = nil
         try? AVAudioSession.sharedInstance().setActive(false)
     }
 }
@@ -117,7 +125,7 @@ struct ContentView: View {
     @StateObject private var speech = LocalSpeech()
     @State private var translationConfig: TranslationSession.Configuration? =
         .init(source: Locale.Language(identifier: "en"), target: Locale.Language(identifier: "zh-Hant"))
-    @State private var translatingID: UUID?
+    @State private var translationQueue: [UUID] = []
     @State private var showSettings = false
 
     var body: some View {
@@ -171,7 +179,6 @@ struct ContentView: View {
                     }
                 }.padding(.horizontal, 18)
             }
-            Spacer(minLength: 0)
             Button {
                 if speech.isListening {
                     speech.stop()
@@ -179,8 +186,10 @@ struct ContentView: View {
                     Task {
                         await speech.start { text in
                             store.add(text)
-                            translatingID = store.entries.first?.id
-                            translationConfig?.invalidate()
+                            if let id = store.entries.first?.id {
+                                translationQueue.append(id)
+                                translationConfig?.invalidate()
+                            }
                         }
                     }
                 }
@@ -193,17 +202,20 @@ struct ContentView: View {
             .tint(Color(red: 1, green: 0.36, blue: 0.33))
             .padding(.horizontal, 18).padding(.bottom, 8)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .foregroundStyle(.white)
         .background(Color(red: 0.03, green: 0.075, blue: 0.13).ignoresSafeArea())
         .preferredColorScheme(.dark)
         .translationTask(translationConfig) { session in
-            guard let id = translatingID,
-                  let entry = store.entries.first(where: { $0.id == id }) else { return }
-            do {
-                let response = try await session.translate(entry.original)
-                store.translate(response.targetText, for: id)
-            } catch {
-                store.translate("翻譯未完成：請檢查系統語言套件", for: id)
+            while !translationQueue.isEmpty {
+                let id = translationQueue.removeFirst()
+                guard let entry = store.entries.first(where: { $0.id == id }) else { continue }
+                do {
+                    let response = try await session.translate(entry.original)
+                    store.translate(response.targetText, for: id)
+                } catch {
+                    store.translate("翻譯未完成：請檢查系統語言套件", for: id)
+                }
             }
         }
         .alert("語音辨識", isPresented: Binding(get: { speech.errorMessage != nil }, set: { if !$0 { speech.errorMessage = nil } })) {
