@@ -1,6 +1,10 @@
 name: iOS Native unsigned IPA
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ios/LiveLingoNative/**'
+      - '.github/workflows/ios-native-unsigned.yml'
   push:
     paths:
       - 'ios/LiveLingoNative/**'
