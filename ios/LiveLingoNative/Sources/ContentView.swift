@@ -123,10 +123,20 @@ final class LocalSpeech: ObservableObject {
 struct ContentView: View {
     @StateObject private var store = CaptionStore()
     @StateObject private var speech = LocalSpeech()
+    @StateObject private var nativeWhisper = NativeWhisper()
+    @State private var useWhisper = true
     @State private var translationConfig: TranslationSession.Configuration? =
         .init(source: Locale.Language(identifier: "en"), target: Locale.Language(identifier: "zh-Hant"))
     @State private var translationQueue: [UUID] = []
     @State private var showSettings = false
+
+    private func appendCaption(_ text: String) {
+        store.add(text)
+        if let id = store.entries.first?.id {
+            translationQueue.append(id)
+            translationConfig?.invalidate()
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -141,10 +151,10 @@ struct ContentView: View {
             .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 8)
 
             VStack(alignment: .leading, spacing: 10) {
-                Label(speech.isListening ? "聆聽中" : "已暫停", systemImage: speech.isListening ? "waveform" : "pause.circle")
+                Label(useWhisper ? nativeWhisper.status : (speech.isListening ? "聆聽中" : "已暫停"), systemImage: (useWhisper ? nativeWhisper.isListening : speech.isListening) ? "waveform" : "pause.circle")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("原文 · English").font(.caption2).foregroundStyle(.secondary)
-                Text(speech.liveText.isEmpty ? (store.entries.first?.original ?? "撳咪高峰開始字幕") : speech.liveText)
+                Text(useWhisper ? (store.entries.first?.original ?? "撳咪高峰開始字幕") : (speech.liveText.isEmpty ? (store.entries.first?.original ?? "撳咪高峰開始字幕") : speech.liveText))
                     .font(.system(size: 29, weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Divider()
@@ -180,21 +190,15 @@ struct ContentView: View {
                 }.padding(.horizontal, 18)
             }
             Button {
-                if speech.isListening {
-                    speech.stop()
+                if useWhisper {
+                    if nativeWhisper.isListening { nativeWhisper.stop() }
+                    else { Task { await nativeWhisper.start(onCaption: appendCaption) } }
                 } else {
-                    Task {
-                        await speech.start { text in
-                            store.add(text)
-                            if let id = store.entries.first?.id {
-                                translationQueue.append(id)
-                                translationConfig?.invalidate()
-                            }
-                        }
-                    }
+                    if speech.isListening { speech.stop() }
+                    else { Task { await speech.start(onFinal: appendCaption) } }
                 }
             } label: {
-                Label(speech.isListening ? "暫停" : "開始聆聽", systemImage: speech.isListening ? "pause.fill" : "mic.fill")
+                Label((useWhisper ? nativeWhisper.isListening : speech.isListening) ? "暫停" : "開始聆聽", systemImage: (useWhisper ? nativeWhisper.isListening : speech.isListening) ? "pause.fill" : "mic.fill")
                     .font(.headline)
                     .frame(maxWidth: .infinity).padding(12)
             }
@@ -218,6 +222,9 @@ struct ContentView: View {
                 }
             }
         }
+        .alert("Whisper", isPresented: Binding(get: { nativeWhisper.errorMessage != nil }, set: { if !$0 { nativeWhisper.errorMessage = nil } })) {
+            Button("知道") { nativeWhisper.errorMessage = nil }
+        } message: { Text(nativeWhisper.errorMessage ?? "") }
         .alert("語音辨識", isPresented: Binding(get: { speech.errorMessage != nil }, set: { if !$0 { speech.errorMessage = nil } })) {
             Button("知道") { speech.errorMessage = nil }
         } message: { Text(speech.errorMessage ?? "") }
@@ -225,9 +232,15 @@ struct ContentView: View {
             NavigationStack {
                 Form {
                     Section("辨識及翻譯") {
-                        Text("語音辨識：Apple Speech（強制本地辨識）")
+                        Toggle("使用原生 Whisper（Core ML）", isOn: $useWhisper)
+                            .onChange(of: useWhisper) { _, _ in
+                                nativeWhisper.stop()
+                                speech.stop()
+                            }
+                        Text("Whisper tiny 首次使用需要下載模型；之後本機運算。")
+                        Text("Apple Speech 仍可作備用辨識。")
                         Text("翻譯：Apple Translation（首次可能需要下載語言套件）")
-                        Text("Whisper 原生核心：尚未整合")
+                        Text("Whisper 透過 WhisperKit / Apple Core ML 執行；目前以約 8 秒音訊分段轉錄。")
                     }
                     Section("本機紀錄") {
                         Text("字幕只保存在本機。")
