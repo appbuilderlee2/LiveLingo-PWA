@@ -1,0 +1,22 @@
+name: LiveLingoNative
+options:
+  bundleIdPrefix: com.appbuilderlee2
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    SWIFT_VERSION: "5.0"
+targets:
+  LiveLingoNative:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.appbuilderlee2.LiveLingoNative
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads: NO
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "LiveLingo 使用咪高峰產生即時字幕。"
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "LiveLingo 使用本機語音辨識產生字幕。"
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_STYLE: Automatic
