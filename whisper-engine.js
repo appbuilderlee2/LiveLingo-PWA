@@ -227,7 +227,7 @@
 
   async function start() {
     if (!window.crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') {
-      throw new Error('Whisper 需要重新開啟 App 以啟用安全運算模式');
+      throw new Error('Whisper 無法啟動：瀏覽器未提供跨來源隔離或 SharedArrayBuffer。請檢查設定頁診斷資訊');
     }
     const available = await ensureModel();
     if (!available) throw new Error('請先下載 Whisper 模型');
