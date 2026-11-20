@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested for translation queue stability and error visibility (042c703).
+# Build requested for speech pause checkpoint without resetting recognition (8c89556).
 on:
   workflow_dispatch:
   push:
