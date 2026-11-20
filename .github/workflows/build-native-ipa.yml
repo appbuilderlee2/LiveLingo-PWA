@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested for finalized subtitles preserved below new captions (94dd483).
+# Build requested for translation queue stability and error visibility (042c703).
 on:
   workflow_dispatch:
   push:
