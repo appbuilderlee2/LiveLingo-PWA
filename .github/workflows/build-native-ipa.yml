@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested for Apple Speech history checkpoint and translation restart fix (e610885).
+# Build requested for finalized subtitles preserved below new captions (94dd483).
 on:
   workflow_dispatch:
   push:
