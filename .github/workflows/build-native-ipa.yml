@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested for 2-second Whisper segment update (b983b7a).
+# Build requested for Apple Speech history checkpoint and translation restart fix (e610885).
 on:
   workflow_dispatch:
   push:
