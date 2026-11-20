@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested for selectable tiny/base model downloads (0595472).
+# Build requested with Apple Speech live caption history and translation fix (d2de603).
 on:
   workflow_dispatch:
   push:
