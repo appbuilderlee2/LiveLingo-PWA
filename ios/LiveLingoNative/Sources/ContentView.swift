@@ -151,7 +151,9 @@ struct ContentView: View {
     @StateObject private var store = CaptionStore()
     @StateObject private var speech = LocalSpeech()
     @StateObject private var nativeWhisper = NativeWhisper()
+    @StateObject private var streamingSpeech = StreamingSpeech()
     @State private var useWhisper = false
+    @State private var useLegacySpeech = false
     @State private var selectedWhisperModel = "tiny"
     @State private var translationConfig: TranslationSession.Configuration? =
         .init(source: Locale.Language(identifier: "en"), target: Locale.Language(identifier: "zh-Hant"))
@@ -212,10 +214,10 @@ struct ContentView: View {
             .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 8)
 
             VStack(alignment: .leading, spacing: 10) {
-                Label(useWhisper ? nativeWhisper.status : (speech.isListening ? "即時逐字辨識中" : "已暫停"), systemImage: (useWhisper ? nativeWhisper.isListening : speech.isListening) ? "waveform" : "pause.circle")
+                Label(useWhisper ? nativeWhisper.status : ((useLegacySpeech ? speech.isListening : streamingSpeech.isListening) ? "即時串流辨識中" : "已暫停"), systemImage: (useWhisper ? nativeWhisper.isListening : (useLegacySpeech ? speech.isListening : streamingSpeech.isListening)) ? "waveform" : "pause.circle")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("原文 · English").font(.caption2).foregroundStyle(.secondary)
-                Text(useWhisper ? (store.entries.first?.original ?? "撳咪高峰開始字幕") : (speech.liveText.isEmpty ? (store.entries.first?.original ?? "撳咪高峰開始字幕") : speech.liveText))
+                Text(useWhisper ? (store.entries.first?.original ?? "撳咪高峰開始字幕") : ((useLegacySpeech ? speech.liveText : streamingSpeech.liveText).isEmpty ? (store.entries.first?.original ?? "撳咪高峰開始字幕") : (useLegacySpeech ? speech.liveText : streamingSpeech.liveText)))
                     .font(.system(size: 29, weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Divider()
@@ -254,12 +256,15 @@ struct ContentView: View {
                 if useWhisper {
                     if nativeWhisper.isListening { nativeWhisper.stop() }
                     else { Task { await nativeWhisper.start(onCaption: appendCaption) } }
-                } else {
+                } else if useLegacySpeech {
                     if speech.isListening { speechPauseTask?.cancel(); speech.stop(); liveCaptionID = nil }
                     else { Task { await speech.start(onPartial: receivePartial, onFinal: appendCaption) } }
+                } else {
+                    if streamingSpeech.isListening { streamingSpeech.stop() }
+                    else { Task { await streamingSpeech.start(onFinal: appendCaption) } }
                 }
             } label: {
-                Label((useWhisper ? nativeWhisper.isListening : speech.isListening) ? "暫停" : "開始聆聽", systemImage: (useWhisper ? nativeWhisper.isListening : speech.isListening) ? "pause.fill" : "mic.fill")
+                Label((useWhisper ? nativeWhisper.isListening : (useLegacySpeech ? speech.isListening : streamingSpeech.isListening)) ? "暫停" : "開始聆聽", systemImage: (useWhisper ? nativeWhisper.isListening : (useLegacySpeech ? speech.isListening : streamingSpeech.isListening)) ? "pause.fill" : "mic.fill")
                     .font(.headline)
                     .frame(maxWidth: .infinity).padding(12)
             }
@@ -294,6 +299,9 @@ struct ContentView: View {
                 translationConfig?.invalidate()
             }
         }
+        .alert("串流語音辨識", isPresented: Binding(get: { streamingSpeech.errorMessage != nil }, set: { if !$0 { streamingSpeech.errorMessage = nil } })) {
+            Button("知道") { streamingSpeech.errorMessage = nil }
+        } message: { Text(streamingSpeech.errorMessage ?? "") }
         .alert("Whisper", isPresented: Binding(get: { nativeWhisper.errorMessage != nil }, set: { if !$0 { nativeWhisper.errorMessage = nil } })) {
             Button("知道") { nativeWhisper.errorMessage = nil }
         } message: { Text(nativeWhisper.errorMessage ?? "") }
@@ -304,9 +312,16 @@ struct ContentView: View {
             NavigationStack {
                 Form {
                     Section("辨識及翻譯") {
+                        Toggle("使用舊版 Apple Speech（備用）", isOn: $useLegacySpeech)
+                            .onChange(of: useLegacySpeech) { _, _ in
+                                streamingSpeech.stop()
+                                speech.stop()
+                            }
+                        Text("預設 SpeechAnalyzer：暫時英文只顯示，確認後才永久儲存及排隊翻譯。")
                         Toggle("使用 Whisper 本地辨識", isOn: $useWhisper)
                             .onChange(of: useWhisper) { _, _ in
                                 nativeWhisper.stop()
+                                streamingSpeech.stop()
                                 speech.stop()
                             }
                         Picker("目前使用模型", selection: $selectedWhisperModel) {
