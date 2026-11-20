@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested for simultaneous phrase translation and persistent transcript (a653ea7).
+# Build requested to use iOS 26 SDK for SpeechAnalyzer (a653ea7).
 on:
   workflow_dispatch:
   push:
@@ -7,7 +7,7 @@ on:
       - '.github/workflows/build-native-ipa.yml'
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Check out native iOS development branch
         uses: actions/checkout@v4
