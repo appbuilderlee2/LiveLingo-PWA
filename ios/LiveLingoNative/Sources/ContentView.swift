@@ -51,6 +51,7 @@ final class LocalSpeech: ObservableObject {
     private var lastFinal = ""
     private var onFinalCallback: ((String) -> Void)?
     private var onPartialCallback: ((String) -> Void)?
+    private var committedPrefix = ""
 
     func start(onPartial: @escaping (String) -> Void, onFinal: @escaping (String) -> Void) async {
         guard !isListening else { return }
@@ -87,16 +88,24 @@ final class LocalSpeech: ObservableObject {
             try engine.start()
             isListening = true
             lastFinal = ""
+            committedPrefix = ""
             task = recognizer.recognitionTask(with: req) { [weak self] result, error in
                 Task { @MainActor in
                     guard let self else { return }
                     if let result {
                         let text = result.bestTranscription.formattedString
-                        self.liveText = text
-                        if !result.isFinal { self.onPartialCallback?(text) }
+                        let remaining = text.hasPrefix(self.committedPrefix) ? String(text.dropFirst(self.committedPrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines) : text
+                        self.liveText = remaining
+                        if !result.isFinal && !remaining.isEmpty { self.onPartialCallback?(remaining) }
+                        if !result.isFinal && remaining.split(separator: " ").count >= 16 {
+                            self.committedPrefix = text
+                            self.onFinalCallback?(remaining)
+                            self.liveText = ""
+                        }
                         if result.isFinal && text != self.lastFinal {
                             self.lastFinal = text
-                            onFinal(text)
+                            if !remaining.isEmpty { onFinal(remaining) }
+                            self.committedPrefix = ""
                             self.liveText = ""
                         }
                     }
@@ -124,6 +133,7 @@ final class LocalSpeech: ObservableObject {
         isListening = false
         onFinalCallback = nil
         onPartialCallback = nil
+        committedPrefix = ""
         try? AVAudioSession.sharedInstance().setActive(false)
     }
 }
@@ -145,7 +155,7 @@ struct ContentView: View {
     private func enqueueTranslation(_ id: UUID) {
         if !translationQueue.contains(id) { translationQueue.append(id) }
         translationRevision += 1
-        translationConfig?.invalidate()
+        translationConfig = .init(source: Locale.Language(identifier: "en"), target: Locale.Language(identifier: "zh-Hant"))
     }
 
     private func receivePartial(_ text: String) {
