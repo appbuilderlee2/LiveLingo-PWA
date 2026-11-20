@@ -20,11 +20,11 @@ final class NativeWhisper: ObservableObject {
     func prepare() async {
         guard pipeline == nil, !isPreparing else { return }
         isPreparing = true
-        status = "正在下載／載入 Whisper tiny 模型…"
+        status = "正在下載／載入 Whisper base 模型…"
         defer { isPreparing = false }
         do {
-            // Tiny is the first-step default for responsiveness on iPhone 15 Pro Max.
-            pipeline = try await WhisperKit(model: "tiny")
+            // Base provides improved recognition accuracy at higher compute cost than tiny.
+            pipeline = try await WhisperKit(model: "base")
             status = "Whisper 已準備（本地 Core ML）"
         } catch {
             status = "Whisper 模型載入失敗"
