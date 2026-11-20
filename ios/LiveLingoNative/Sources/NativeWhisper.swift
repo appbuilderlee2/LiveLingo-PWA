@@ -10,6 +10,11 @@ final class NativeWhisper: ObservableObject {
     @Published var status = "Whisper 尚未載入"
     @Published var errorMessage: String?
     @Published var latestText = ""
+    @Published private(set) var downloadedModels: Set<String> = []
+    @Published private(set) var activeModel = "tiny"
+    @Published private(set) var preparingModel: String?
+    private var modelCache: [String: WhisperKit] = [:]
+    private let supportedModels: Set<String> = ["tiny", "base"]
 
     private var pipeline: WhisperKit?
     private var recorder: AVAudioRecorder?
@@ -17,24 +22,46 @@ final class NativeWhisper: ObservableObject {
     private var onCaption: ((String) -> Void)?
     private let segmentSeconds: UInt64 = 8
 
-    func prepare() async {
-        guard pipeline == nil, !isPreparing else { return }
+    func isDownloaded(_ model: String) -> Bool {
+        downloadedModels.contains(model)
+    }
+
+    func prepare(model: String = "tiny") async {
+        guard supportedModels.contains(model), !isPreparing else { return }
+        if modelCache[model] != nil {
+            downloadedModels.insert(model)
+            status = "Whisper \(model) 已準備"
+            return
+        }
         isPreparing = true
-        status = "正在下載／載入 Whisper base 模型…"
-        defer { isPreparing = false }
+        preparingModel = model
+        status = "正在下載／載入 Whisper \(model)…"
+        defer {
+            isPreparing = false
+            preparingModel = nil
+        }
         do {
-            // Base provides improved recognition accuracy at higher compute cost than tiny.
-            pipeline = try await WhisperKit(model: "base")
-            status = "Whisper 已準備（本地 Core ML）"
+            let loaded = try await WhisperKit(model: model)
+            modelCache[model] = loaded
+            downloadedModels.insert(model)
+            status = "Whisper \(model) 已準備（本地 Core ML）"
         } catch {
-            status = "Whisper 模型載入失敗"
+            status = "Whisper \(model) 模型載入失敗"
             errorMessage = error.localizedDescription
         }
     }
 
+    func selectModel(_ model: String) {
+        guard supportedModels.contains(model), !isListening else { return }
+        activeModel = model
+        pipeline = modelCache[model]
+        status = pipeline == nil ? "Whisper \(model) 尚未載入" : "Whisper \(model) 已準備"
+    }
+
     func start(onCaption: @escaping (String) -> Void) async {
         guard !isListening else { return }
-        if pipeline == nil { await prepare() }
+        if pipeline == nil { await prepare(model: activeModel) }
+        pipeline = modelCache[activeModel]
         guard pipeline != nil else { return }
         let allowed = await withCheckedContinuation { continuation in
             AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
@@ -49,7 +76,7 @@ final class NativeWhisper: ObservableObject {
             try session.setActive(true)
             self.onCaption = onCaption
             isListening = true
-            status = "Whisper 本地聆聽中"
+            status = "Whisper \(activeModel) 本地聆聽中"
             loopTask = Task { [weak self] in
                 guard let self else { return }
                 await self.recordLoop()
@@ -78,7 +105,7 @@ final class NativeWhisper: ObservableObject {
                 current.stop()
                 recorder = nil
                 guard let pipeline else { break }
-                status = "Whisper 本地轉錄中"
+                status = "Whisper \(activeModel) 本地轉錄中"
                 let results = try await pipeline.transcribe(audioPath: url.path)
                 let text = results.map(\.text).joined(separator: " ")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -108,7 +135,7 @@ final class NativeWhisper: ObservableObject {
         recorder?.stop()
         recorder = nil
         onCaption = nil
-        status = pipeline == nil ? "Whisper 尚未載入" : "Whisper 已暫停"
+        status = pipeline == nil ? "Whisper \(activeModel) 尚未載入" : "Whisper \(activeModel) 已暫停"
         try? AVAudioSession.sharedInstance().setActive(false)
     }
 }
