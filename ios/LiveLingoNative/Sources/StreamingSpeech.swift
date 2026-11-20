@@ -14,7 +14,8 @@ final class StreamingSpeech: ObservableObject {
     private var builder: AsyncStream<AnalyzerInput>.Continuation?
     private var resultsTask: Task<Void, Never>?
     private var onFinal: ((String) -> Void)?
-    private var converter: AnalyzerInputConverter?
+    private var converter: AVAudioConverter?
+    private var targetFormat: AVAudioFormat?
 
     func start(onFinal: @escaping (String) -> Void) async {
         guard !isListening else { return }
@@ -36,8 +37,7 @@ final class StreamingSpeech: ObservableObject {
                 try await install.downloadAndInstall()
             }
             let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
-            let converter = AnalyzerInputConverter(analyzerFormat: format)
-            self.converter = converter
+            self.targetFormat = format
             let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
             builder = continuation
             let analyzer = SpeechAnalyzer(modules: [transcriber])
@@ -66,13 +66,33 @@ final class StreamingSpeech: ObservableObject {
             try session.setActive(true)
             let input = engine.inputNode
             let inputFormat = input.outputFormat(forBus: 0)
+            guard let audioConverter = AVAudioConverter(from: inputFormat, to: format) else {
+                throw NSError(domain: "LiveLingo", code: 2, userInfo: [NSLocalizedDescriptionKey: "無法建立音訊格式轉換器"])
+            }
+            self.converter = audioConverter
             input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
                 // Conversion is serialized onto the model actor; recording continues across pauses.
                 Task { @MainActor [weak self] in
                     guard let self, self.isListening, let converter = self.converter else { return }
                     do {
-                        for item in try converter.convert(buffer, at: nil) {
-                            self.builder?.yield(item)
+                        guard let targetFormat = self.targetFormat else { return }
+                        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
+                        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 128)
+                        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
+                        var supplied = false
+                        var conversionError: NSError?
+                        let status = converter.convert(to: output, error: &conversionError) { _, inputStatus in
+                            if supplied {
+                                inputStatus.pointee = .noDataNow
+                                return nil
+                            }
+                            supplied = true
+                            inputStatus.pointee = .haveData
+                            return buffer
+                        }
+                        if let conversionError { throw conversionError }
+                        if status != .error && output.frameLength > 0 {
+                            self.builder?.yield(AnalyzerInput(buffer: output))
                         }
                     } catch {
                         self.errorMessage = error.localizedDescription
@@ -100,6 +120,7 @@ final class StreamingSpeech: ObservableObject {
         }
         analyzer = nil
         converter = nil
+        targetFormat = nil
         isListening = false
         liveText = ""
         onFinal = nil
