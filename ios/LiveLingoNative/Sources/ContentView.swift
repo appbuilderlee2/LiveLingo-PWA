@@ -314,7 +314,7 @@ struct ContentView: View {
                         Text("可先下載 tiny 及 base，再選擇運行其中一個；Whisper 模型首次下載需要網絡。")
                         Text("預設為 Apple Speech 本地即時辨識：講話時持續顯示未完成嘅英文字幕。Whisper 分段模式較慢，適合準確度優先。")
                         Text("翻譯：Apple Translation（首次可能需要下載語言套件）")
-                        Text("Whisper 透過 WhisperKit / Apple Core ML 執行；目前以約 8 秒音訊分段轉錄。兩種模式暫未同時運行。")
+                        Text("Whisper 透過 WhisperKit / Apple Core ML 執行；目前以約 2 秒音訊分段轉錄，仍須等待辨識運算。兩種模式暫未同時運行。")
                     }
                     Section("本機紀錄") {
                         Text("字幕只保存在本機。")
