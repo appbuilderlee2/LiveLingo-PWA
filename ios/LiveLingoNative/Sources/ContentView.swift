@@ -125,6 +125,7 @@ struct ContentView: View {
     @StateObject private var speech = LocalSpeech()
     @StateObject private var nativeWhisper = NativeWhisper()
     @State private var useWhisper = false
+    @State private var selectedWhisperModel = "tiny"
     @State private var translationConfig: TranslationSession.Configuration? =
         .init(source: Locale.Language(identifier: "en"), target: Locale.Language(identifier: "zh-Hant"))
     @State private var translationQueue: [UUID] = []
@@ -232,22 +233,45 @@ struct ContentView: View {
             NavigationStack {
                 Form {
                     Section("辨識及翻譯") {
-                        Toggle("Whisper base 模式（約 8 秒分段）", isOn: $useWhisper)
+                        Toggle("使用 Whisper 本地辨識", isOn: $useWhisper)
                             .onChange(of: useWhisper) { _, _ in
                                 nativeWhisper.stop()
                                 speech.stop()
                             }
-                        Button {
-                            Task { await nativeWhisper.prepare() }
-                        } label: {
-                            Label(nativeWhisper.isPreparing ? "正在下載 Whisper…" : "下載／載入 Whisper 模型", systemImage: "arrow.down.circle")
+                        Picker("目前使用模型", selection: $selectedWhisperModel) {
+                            Text("tiny（快，預設）").tag("tiny")
+                            Text("base（較準確）").tag("base")
                         }
-                        .disabled(nativeWhisper.isPreparing)
-                        if nativeWhisper.isPreparing { ProgressView("正在準備本地模型…") }
+                        .onChange(of: selectedWhisperModel) { _, model in
+                            nativeWhisper.stop()
+                            nativeWhisper.selectModel(model)
+                        }
+                        ForEach(["tiny", "base"], id: \.self) { model in
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text("Whisper \(model)")
+                                        .font(.body.weight(.medium))
+                                    Text(nativeWhisper.isDownloaded(model) ? "已載入，可離線使用" : "可預先下載")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button {
+                                    Task { await nativeWhisper.prepare(model: model) }
+                                } label: {
+                                    if nativeWhisper.preparingModel == model {
+                                        ProgressView()
+                                    } else {
+                                        Label(nativeWhisper.isDownloaded(model) ? "已準備" : "下載", systemImage: nativeWhisper.isDownloaded(model) ? "checkmark.circle.fill" : "arrow.down.circle")
+                                    }
+                                }
+                                .disabled(nativeWhisper.isPreparing || nativeWhisper.isDownloaded(model))
+                            }
+                        }
                         Text(nativeWhisper.status)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text("Whisper base 首次使用需要網絡下載模型；之後本機運算。")
+                        Text("可先下載 tiny 及 base，再選擇運行其中一個；Whisper 模型首次下載需要網絡。")
                         Text("預設為 Apple Speech 本地即時辨識：講話時持續顯示未完成嘅英文字幕。Whisper 分段模式較慢，適合準確度優先。")
                         Text("翻譯：Apple Translation（首次可能需要下載語言套件）")
                         Text("Whisper 透過 WhisperKit / Apple Core ML 執行；目前以約 8 秒音訊分段轉錄。兩種模式暫未同時運行。")
