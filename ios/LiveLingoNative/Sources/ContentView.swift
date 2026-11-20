@@ -232,7 +232,7 @@ struct ContentView: View {
             NavigationStack {
                 Form {
                     Section("辨識及翻譯") {
-                        Toggle("Whisper 高準確度模式（約 8 秒分段）", isOn: $useWhisper)
+                        Toggle("Whisper base 模式（約 8 秒分段）", isOn: $useWhisper)
                             .onChange(of: useWhisper) { _, _ in
                                 nativeWhisper.stop()
                                 speech.stop()
@@ -247,7 +247,7 @@ struct ContentView: View {
                         Text(nativeWhisper.status)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text("Whisper tiny 首次使用需要網絡下載模型；之後本機運算。")
+                        Text("Whisper base 首次使用需要網絡下載模型；之後本機運算。")
                         Text("預設為 Apple Speech 本地即時辨識：講話時持續顯示未完成嘅英文字幕。Whisper 分段模式較慢，適合準確度優先。")
                         Text("翻譯：Apple Translation（首次可能需要下載語言套件）")
                         Text("Whisper 透過 WhisperKit / Apple Core ML 執行；目前以約 8 秒音訊分段轉錄。兩種模式暫未同時運行。")
