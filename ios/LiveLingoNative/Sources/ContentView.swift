@@ -25,6 +25,10 @@ final class CaptionStore: ObservableObject {
         guard !clean.isEmpty else { return }
         entries.insert(CaptionEntry(timestamp: .now, original: clean, translated: "翻譯中…"), at: 0)
     }
+    func update(_ id: UUID, original: String) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index] = CaptionEntry(id: id, timestamp: entries[index].timestamp, original: original, translated: "翻譯中…")
+    }
     func translate(_ translated: String, for id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].translated = translated
@@ -46,10 +50,12 @@ final class LocalSpeech: ObservableObject {
     private var task: SFSpeechRecognitionTask?
     private var lastFinal = ""
     private var onFinalCallback: ((String) -> Void)?
+    private var onPartialCallback: ((String) -> Void)?
 
-    func start(onFinal: @escaping (String) -> Void) async {
+    func start(onPartial: @escaping (String) -> Void, onFinal: @escaping (String) -> Void) async {
         guard !isListening else { return }
         onFinalCallback = onFinal
+        onPartialCallback = onPartial
         let speechAuthorized = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
         }
@@ -87,6 +93,7 @@ final class LocalSpeech: ObservableObject {
                     if let result {
                         let text = result.bestTranscription.formattedString
                         self.liveText = text
+                        if !result.isFinal { self.onPartialCallback?(text) }
                         if result.isFinal && text != self.lastFinal {
                             self.lastFinal = text
                             onFinal(text)
@@ -116,6 +123,7 @@ final class LocalSpeech: ObservableObject {
         task = nil
         isListening = false
         onFinalCallback = nil
+        onPartialCallback = nil
         try? AVAudioSession.sharedInstance().setActive(false)
     }
 }
@@ -130,12 +138,44 @@ struct ContentView: View {
         .init(source: Locale.Language(identifier: "en"), target: Locale.Language(identifier: "zh-Hant"))
     @State private var translationQueue: [UUID] = []
     @State private var showSettings = false
+    @State private var liveCaptionID: UUID?
+    @State private var translationRevision = 0
+    @State private var liveTranslationTask: Task<Void, Never>?
+
+    private func enqueueTranslation(_ id: UUID) {
+        if !translationQueue.contains(id) { translationQueue.append(id) }
+        translationRevision += 1
+        translationConfig?.invalidate()
+    }
+
+    private func receivePartial(_ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        if let id = liveCaptionID {
+            store.update(id, original: clean)
+        } else {
+            store.add(clean)
+            liveCaptionID = store.entries.first?.id
+        }
+        guard let id = liveCaptionID else { return }
+        // Debounce partial results so translation is not requested on every keystroke.
+        liveTranslationTask?.cancel()
+        liveTranslationTask = Task {
+            try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled else { return }
+            enqueueTranslation(id)
+        }
+    }
 
     private func appendCaption(_ text: String) {
-        store.add(text)
-        if let id = store.entries.first?.id {
-            translationQueue.append(id)
-            translationConfig?.invalidate()
+        liveTranslationTask?.cancel()
+        if let id = liveCaptionID {
+            store.update(id, original: text)
+            liveCaptionID = nil
+            enqueueTranslation(id)
+        } else {
+            store.add(text)
+            if let id = store.entries.first?.id { enqueueTranslation(id) }
         }
     }
 
@@ -195,8 +235,8 @@ struct ContentView: View {
                     if nativeWhisper.isListening { nativeWhisper.stop() }
                     else { Task { await nativeWhisper.start(onCaption: appendCaption) } }
                 } else {
-                    if speech.isListening { speech.stop() }
-                    else { Task { await speech.start(onFinal: appendCaption) } }
+                    if speech.isListening { speech.stop(); liveCaptionID = nil }
+                    else { Task { await speech.start(onPartial: receivePartial, onFinal: appendCaption) } }
                 }
             } label: {
                 Label((useWhisper ? nativeWhisper.isListening : speech.isListening) ? "暫停" : "開始聆聽", systemImage: (useWhisper ? nativeWhisper.isListening : speech.isListening) ? "pause.fill" : "mic.fill")
