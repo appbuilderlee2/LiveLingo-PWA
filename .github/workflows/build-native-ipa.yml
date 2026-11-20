@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested after enabling low-latency live captions (0d48c5b).
+# Build requested with Whisper model download button (38f620d).
 on:
   workflow_dispatch:
   push:
