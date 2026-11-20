@@ -20,7 +20,7 @@ final class NativeWhisper: ObservableObject {
     private var recorder: AVAudioRecorder?
     private var loopTask: Task<Void, Never>?
     private var onCaption: ((String) -> Void)?
-    private let segmentSeconds: UInt64 = 8
+    private let segmentSeconds: UInt64 = 2
 
     func isDownloaded(_ model: String) -> Bool {
         downloadedModels.contains(model)
@@ -104,7 +104,7 @@ final class NativeWhisper: ObservableObject {
                 try await Task.sleep(for: .seconds(segmentSeconds))
                 current.stop()
                 recorder = nil
-                guard let pipeline else { break }
+                guard isListening, let pipeline else { break }
                 status = "Whisper \(activeModel) 本地轉錄中"
                 let results = try await pipeline.transcribe(audioPath: url.path)
                 let text = results.map(\.text).joined(separator: " ")
@@ -113,7 +113,7 @@ final class NativeWhisper: ObservableObject {
                     latestText = text
                     onCaption?(text)
                 }
-                status = "Whisper 本地聆聽中"
+                status = "Whisper \(activeModel) 本地聆聽中"
             } catch is CancellationError {
                 recorder?.stop()
                 recorder = nil
