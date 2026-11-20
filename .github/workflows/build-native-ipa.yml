@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested after replacing unsupported SpeechAnalyzer audio converter helper (a43eab0).
+# Build requested for simultaneous phrase translation and persistent transcript (a653ea7).
 on:
   workflow_dispatch:
   push:
