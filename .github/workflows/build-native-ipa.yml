@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested for Whisper base model (739d8e1).
+# Build requested for selectable tiny/base model downloads (0595472).
 on:
   workflow_dispatch:
   push:
