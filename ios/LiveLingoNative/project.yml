@@ -3,7 +3,7 @@ options:
   bundleIdPrefix: com.appbuilderlee2
 settings:
   base:
-    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
     SWIFT_VERSION: "5.0"
 packages:
   WhisperKit:
