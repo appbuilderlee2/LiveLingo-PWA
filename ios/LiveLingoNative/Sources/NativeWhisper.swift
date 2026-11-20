@@ -47,7 +47,7 @@ final class NativeWhisper: ObservableObject {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .measurement)
             try session.setActive(true)
-            onCaption = onCaption
+            self.onCaption = onCaption
             isListening = true
             status = "Whisper 本地聆聽中"
             loopTask = Task { [weak self] in
@@ -80,7 +80,7 @@ final class NativeWhisper: ObservableObject {
                 guard let pipeline else { break }
                 status = "Whisper 本地轉錄中"
                 let results = try await pipeline.transcribe(audioPath: url.path)
-                let text = (results?.text ?? "")
+                let text = results.map(\.text).joined(separator: " ")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !text.isEmpty {
                     latestText = text
