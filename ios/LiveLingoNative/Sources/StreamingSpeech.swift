@@ -14,10 +14,11 @@ final class StreamingSpeech: ObservableObject {
     private var builder: AsyncStream<AnalyzerInput>.Continuation?
     private var resultsTask: Task<Void, Never>?
     private var onFinal: ((String) -> Void)?
+    private var onPartial: ((String) -> Void)?
     private var converter: AVAudioConverter?
     private var targetFormat: AVAudioFormat?
 
-    func start(onFinal: @escaping (String) -> Void) async {
+    func start(onPartial: @escaping (String) -> Void, onFinal: @escaping (String) -> Void) async {
         guard !isListening else { return }
         let mic = await withCheckedContinuation { continuation in
             AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
@@ -43,6 +44,7 @@ final class StreamingSpeech: ObservableObject {
             let analyzer = SpeechAnalyzer(modules: [transcriber])
             self.analyzer = analyzer
             self.onFinal = onFinal
+            self.onPartial = onPartial
             resultsTask = Task { [weak self] in
                 do {
                     for try await result in transcriber.results {
@@ -54,6 +56,7 @@ final class StreamingSpeech: ObservableObject {
                             self.onFinal?(value)
                         } else {
                             self.liveText = value
+                            self.onPartial?(value)
                         }
                     }
                 } catch {
@@ -124,6 +127,7 @@ final class StreamingSpeech: ObservableObject {
         isListening = false
         liveText = ""
         onFinal = nil
+        onPartial = nil
         try? AVAudioSession.sharedInstance().setActive(false)
     }
 }
