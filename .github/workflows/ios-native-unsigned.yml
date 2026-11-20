@@ -1,0 +1,35 @@
+name: iOS Native unsigned IPA
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ios/LiveLingoNative/**'
+      - '.github/workflows/ios-native-unsigned.yml'
+  push:
+    paths:
+      - 'ios/LiveLingoNative/**'
+      - '.github/workflows/ios-native-unsigned.yml'
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios/LiveLingoNative
+        run: xcodegen generate
+      - name: Build iOS device app without signing
+        working-directory: ios/LiveLingoNative
+        run: |
+          xcodebuild -project LiveLingoNative.xcodeproj -scheme LiveLingoNative -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - name: Package unsigned IPA
+        working-directory: ios/LiveLingoNative
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/LiveLingoNative.app Payload/
+          zip -qr LiveLingoNative-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiveLingoNative-unsigned-IPA
+          path: ios/LiveLingoNative/LiveLingoNative-unsigned.ipa
