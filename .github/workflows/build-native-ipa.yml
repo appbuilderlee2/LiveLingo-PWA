@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested for native SpeechAnalyzer streaming migration (d30aae5).
+# Build requested after replacing unsupported SpeechAnalyzer audio converter helper (a43eab0).
 on:
   workflow_dispatch:
   push:
@@ -13,6 +13,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: feature/native-ios-starter
+      - name: Show Xcode version
+        run: xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
