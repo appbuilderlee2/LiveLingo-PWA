@@ -237,7 +237,17 @@ struct ContentView: View {
                                 nativeWhisper.stop()
                                 speech.stop()
                             }
-                        Text("Whisper tiny 首次使用需要下載模型；之後本機運算。")
+                        Button {
+                            Task { await nativeWhisper.prepare() }
+                        } label: {
+                            Label(nativeWhisper.isPreparing ? "正在下載 Whisper…" : "下載／載入 Whisper 模型", systemImage: "arrow.down.circle")
+                        }
+                        .disabled(nativeWhisper.isPreparing)
+                        if nativeWhisper.isPreparing { ProgressView("正在準備本地模型…") }
+                        Text(nativeWhisper.status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Whisper tiny 首次使用需要網絡下載模型；之後本機運算。")
                         Text("預設為 Apple Speech 本地即時辨識：講話時持續顯示未完成嘅英文字幕。Whisper 分段模式較慢，適合準確度優先。")
                         Text("翻譯：Apple Translation（首次可能需要下載語言套件）")
                         Text("Whisper 透過 WhisperKit / Apple Core ML 執行；目前以約 8 秒音訊分段轉錄。兩種模式暫未同時運行。")
