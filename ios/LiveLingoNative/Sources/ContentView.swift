@@ -52,6 +52,7 @@ final class LocalSpeech: ObservableObject {
     private var onFinalCallback: ((String) -> Void)?
     private var onPartialCallback: ((String) -> Void)?
     private var committedPrefix = ""
+    private var fullRecognitionText = ""
 
     func start(onPartial: @escaping (String) -> Void, onFinal: @escaping (String) -> Void) async {
         guard !isListening else { return }
@@ -89,18 +90,18 @@ final class LocalSpeech: ObservableObject {
             isListening = true
             lastFinal = ""
             committedPrefix = ""
+            fullRecognitionText = ""
             task = recognizer.recognitionTask(with: req) { [weak self] result, error in
                 Task { @MainActor in
                     guard let self else { return }
                     if let result {
                         let text = result.bestTranscription.formattedString
+                        self.fullRecognitionText = text
                         let remaining = text.hasPrefix(self.committedPrefix) ? String(text.dropFirst(self.committedPrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines) : text
                         self.liveText = remaining
                         if !result.isFinal && !remaining.isEmpty { self.onPartialCallback?(remaining) }
                         if !result.isFinal && remaining.split(separator: " ").count >= 16 {
-                            self.committedPrefix = text
-                            self.onFinalCallback?(remaining)
-                            self.liveText = ""
+                            self.checkpoint()
                         }
                         if result.isFinal && text != self.lastFinal {
                             self.lastFinal = text
@@ -116,6 +117,14 @@ final class LocalSpeech: ObservableObject {
             errorMessage = error.localizedDescription
             stop()
         }
+    }
+
+    func checkpoint() {
+        let segment = liveText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !segment.isEmpty else { return }
+        committedPrefix = fullRecognitionText
+        liveText = ""
+        onFinalCallback?(segment)
     }
 
     func stop() {
@@ -152,6 +161,7 @@ struct ContentView: View {
     @State private var isTranslating = false
     @State private var translationError: String?
     @State private var liveTranslationTask: Task<Void, Never>?
+    @State private var speechPauseTask: Task<Void, Never>?
 
     private func enqueueTranslation(_ id: UUID) {
         if !translationQueue.contains(id) { translationQueue.append(id) }
@@ -163,27 +173,20 @@ struct ContentView: View {
     }
 
     private func receivePartial(_ text: String) {
-        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { return }
-        if let id = liveCaptionID {
-            // Update ONLY the active segment; finalized entries remain untouched below.
-            store.update(id, original: clean)
-        } else {
-            store.add(clean)
-            liveCaptionID = store.entries.first?.id
-        }
-        guard let id = liveCaptionID else { return }
-        liveTranslationTask?.cancel()
-        liveTranslationTask = Task {
-            try? await Task.sleep(for: .milliseconds(900))
+        // Live text stays in the top subtitle card. Only committed segments enter history.
+        // A short silence commits the current phrase without stopping the microphone.
+        speechPauseTask?.cancel()
+        speechPauseTask = Task {
+            try? await Task.sleep(for: .milliseconds(1300))
             guard !Task.isCancelled else { return }
-            enqueueTranslation(id)
+            speech.checkpoint()
         }
     }
 
     private func appendCaption(_ text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         liveTranslationTask?.cancel()
+        speechPauseTask?.cancel()
         guard !clean.isEmpty else { return }
         if let id = liveCaptionID {
             // Freeze this entry: future partials will create a NEW entry at index 0.
@@ -252,7 +255,7 @@ struct ContentView: View {
                     if nativeWhisper.isListening { nativeWhisper.stop() }
                     else { Task { await nativeWhisper.start(onCaption: appendCaption) } }
                 } else {
-                    if speech.isListening { speech.stop(); liveCaptionID = nil }
+                    if speech.isListening { speechPauseTask?.cancel(); speech.stop(); liveCaptionID = nil }
                     else { Task { await speech.start(onPartial: receivePartial, onFinal: appendCaption) } }
                 }
             } label: {
