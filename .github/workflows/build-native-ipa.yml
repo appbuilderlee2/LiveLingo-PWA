@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested for speech pause checkpoint without resetting recognition (8c89556).
+# Build requested for native SpeechAnalyzer streaming migration (d30aae5).
 on:
   workflow_dispatch:
   push:
