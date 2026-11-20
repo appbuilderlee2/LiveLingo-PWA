@@ -162,13 +162,13 @@ struct ContentView: View {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         if let id = liveCaptionID {
+            // Update ONLY the active segment; finalized entries remain untouched below.
             store.update(id, original: clean)
         } else {
             store.add(clean)
             liveCaptionID = store.entries.first?.id
         }
         guard let id = liveCaptionID else { return }
-        // Debounce partial results so translation is not requested on every keystroke.
         liveTranslationTask?.cancel()
         liveTranslationTask = Task {
             try? await Task.sleep(for: .milliseconds(900))
@@ -178,13 +178,16 @@ struct ContentView: View {
     }
 
     private func appendCaption(_ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         liveTranslationTask?.cancel()
+        guard !clean.isEmpty else { return }
         if let id = liveCaptionID {
-            store.update(id, original: text)
+            // Freeze this entry: future partials will create a NEW entry at index 0.
+            store.update(id, original: clean)
             liveCaptionID = nil
             enqueueTranslation(id)
         } else {
-            store.add(text)
+            store.add(clean)
             if let id = store.entries.first?.id { enqueueTranslation(id) }
         }
     }
@@ -220,7 +223,7 @@ struct ContentView: View {
             .padding(.horizontal, 14)
 
             HStack {
-                Text("字幕紀錄").font(.headline)
+                Text("字幕紀錄 · 新段落在上，舊段落保留在下").font(.headline)
                 Spacer()
                 Text("最新優先").font(.caption).foregroundStyle(.secondary)
             }
