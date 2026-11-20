@@ -164,12 +164,31 @@ struct ContentView: View {
     @State private var translationError: String?
     @State private var liveTranslationTask: Task<Void, Never>?
     @State private var speechPauseTask: Task<Void, Never>?
+    @State private var liveEnglish = ""
+    @State private var liveChinese = ""
+    @State private var provisionalTranslationTask: Task<Void, Never>?
+    @State private var provisionalTranslationRequest: String?
 
     private func enqueueTranslation(_ id: UUID) {
         if !translationQueue.contains(id) { translationQueue.append(id) }
         // Do not replace the configuration while a translation session is running.
         // Replacing it repeatedly cancelled earlier requests before completion.
         if !isTranslating {
+            translationConfig?.invalidate()
+        }
+    }
+
+    private func receiveStreamingPartial(_ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        liveEnglish = clean
+        // Translate stable phrases without waiting for a final recognition result.
+        guard clean.split(separator: " ").count >= 3 else { return }
+        provisionalTranslationTask?.cancel()
+        provisionalTranslationTask = Task {
+            try? await Task.sleep(for: .milliseconds(650))
+            guard !Task.isCancelled else { return }
+            provisionalTranslationRequest = clean
             translationConfig?.invalidate()
         }
     }
@@ -188,6 +207,10 @@ struct ContentView: View {
     private func appendCaption(_ text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         liveTranslationTask?.cancel()
+        provisionalTranslationTask?.cancel()
+        provisionalTranslationRequest = nil
+        liveEnglish = ""
+        liveChinese = ""
         speechPauseTask?.cancel()
         guard !clean.isEmpty else { return }
         if let id = liveCaptionID {
@@ -222,7 +245,7 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Divider()
                 Text("翻譯 · 繁體中文").font(.caption2).foregroundStyle(.secondary)
-                Text(store.entries.first?.translated ?? "翻譯將顯示喺度")
+                Text(liveEnglish.isEmpty ? (store.entries.first?.translated ?? "翻譯將顯示喺度") : (liveChinese.isEmpty ? "翻譯中…" : liveChinese))
                     .font(.system(size: 22, weight: .medium))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -261,7 +284,7 @@ struct ContentView: View {
                     else { Task { await speech.start(onPartial: receivePartial, onFinal: appendCaption) } }
                 } else {
                     if streamingSpeech.isListening { streamingSpeech.stop() }
-                    else { Task { await streamingSpeech.start(onFinal: appendCaption) } }
+                    else { Task { await streamingSpeech.start(onPartial: receiveStreamingPartial, onFinal: appendCaption) } }
                 }
             } label: {
                 Label((useWhisper ? nativeWhisper.isListening : (useLegacySpeech ? speech.isListening : streamingSpeech.isListening)) ? "暫停" : "開始聆聽", systemImage: (useWhisper ? nativeWhisper.isListening : (useLegacySpeech ? speech.isListening : streamingSpeech.isListening)) ? "pause.fill" : "mic.fill")
@@ -277,6 +300,15 @@ struct ContentView: View {
         .background(Color(red: 0.03, green: 0.075, blue: 0.13).ignoresSafeArea())
         .preferredColorScheme(.dark)
         .translationTask(translationConfig) { session in
+            if let phrase = provisionalTranslationRequest, !phrase.isEmpty {
+                provisionalTranslationRequest = nil
+                do {
+                    let result = try await session.translate(phrase)
+                    if liveEnglish == phrase { liveChinese = result.targetText }
+                } catch {
+                    translationError = error.localizedDescription
+                }
+            }
             guard !isTranslating else { return }
             isTranslating = true
             defer { isTranslating = false }
