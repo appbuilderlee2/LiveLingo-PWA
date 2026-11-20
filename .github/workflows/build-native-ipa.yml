@@ -1,5 +1,5 @@
 name: Build LiveLingo Native IPA
-# Build requested to use iOS 26 SDK for SpeechAnalyzer (a653ea7).
+# Build requested for Swift compile fixes (0d5cc61).
 on:
   workflow_dispatch:
   push:
