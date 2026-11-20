@@ -149,13 +149,17 @@ struct ContentView: View {
     @State private var translationQueue: [UUID] = []
     @State private var showSettings = false
     @State private var liveCaptionID: UUID?
-    @State private var translationRevision = 0
+    @State private var isTranslating = false
+    @State private var translationError: String?
     @State private var liveTranslationTask: Task<Void, Never>?
 
     private func enqueueTranslation(_ id: UUID) {
         if !translationQueue.contains(id) { translationQueue.append(id) }
-        translationRevision += 1
-        translationConfig = .init(source: Locale.Language(identifier: "en"), target: Locale.Language(identifier: "zh-Hant"))
+        // Do not replace the configuration while a translation session is running.
+        // Replacing it repeatedly cancelled earlier requests before completion.
+        if !isTranslating {
+            translationConfig?.invalidate()
+        }
     }
 
     private func receivePartial(_ text: String) {
@@ -265,15 +269,26 @@ struct ContentView: View {
         .background(Color(red: 0.03, green: 0.075, blue: 0.13).ignoresSafeArea())
         .preferredColorScheme(.dark)
         .translationTask(translationConfig) { session in
+            guard !isTranslating else { return }
+            isTranslating = true
+            defer { isTranslating = false }
             while !translationQueue.isEmpty {
                 let id = translationQueue.removeFirst()
                 guard let entry = store.entries.first(where: { $0.id == id }) else { continue }
                 do {
                     let response = try await session.translate(entry.original)
                     store.translate(response.targetText, for: id)
+                    translationError = nil
                 } catch {
-                    store.translate("翻譯未完成：請檢查系統語言套件", for: id)
+                    let detail = error.localizedDescription
+                    translationError = detail
+                    store.translate("翻譯失敗：\(detail)", for: id)
                 }
+            }
+        }
+        .onChange(of: isTranslating) { _, active in
+            if !active && !translationQueue.isEmpty {
+                translationConfig?.invalidate()
             }
         }
         .alert("Whisper", isPresented: Binding(get: { nativeWhisper.errorMessage != nil }, set: { if !$0 { nativeWhisper.errorMessage = nil } })) {
@@ -327,6 +342,15 @@ struct ContentView: View {
                         Text("可先下載 tiny 及 base，再選擇運行其中一個；Whisper 模型首次下載需要網絡。")
                         Text("預設為 Apple Speech 本地即時辨識：講話時持續顯示未完成嘅英文字幕。Whisper 分段模式較慢，適合準確度優先。")
                         Text("翻譯：Apple Translation（首次可能需要下載語言套件）")
+                        if let translationError {
+                            Text("翻譯錯誤：\(translationError)")
+                                .foregroundStyle(.red)
+                        }
+                        Button("重新翻譯未完成紀錄") {
+                            for entry in store.entries where entry.translated.hasPrefix("翻譯中") || entry.translated.hasPrefix("翻譯失敗") {
+                                enqueueTranslation(entry.id)
+                            }
+                        }
                         Text("Whisper 透過 WhisperKit / Apple Core ML 執行；目前以約 2 秒音訊分段轉錄，仍須等待辨識運算。兩種模式暫未同時運行。")
                     }
                     Section("本機紀錄") {
