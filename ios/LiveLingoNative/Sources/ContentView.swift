@@ -124,7 +124,7 @@ struct ContentView: View {
     @StateObject private var store = CaptionStore()
     @StateObject private var speech = LocalSpeech()
     @StateObject private var nativeWhisper = NativeWhisper()
-    @State private var useWhisper = true
+    @State private var useWhisper = false
     @State private var translationConfig: TranslationSession.Configuration? =
         .init(source: Locale.Language(identifier: "en"), target: Locale.Language(identifier: "zh-Hant"))
     @State private var translationQueue: [UUID] = []
@@ -151,7 +151,7 @@ struct ContentView: View {
             .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 8)
 
             VStack(alignment: .leading, spacing: 10) {
-                Label(useWhisper ? nativeWhisper.status : (speech.isListening ? "聆聽中" : "已暫停"), systemImage: (useWhisper ? nativeWhisper.isListening : speech.isListening) ? "waveform" : "pause.circle")
+                Label(useWhisper ? nativeWhisper.status : (speech.isListening ? "即時逐字辨識中" : "已暫停"), systemImage: (useWhisper ? nativeWhisper.isListening : speech.isListening) ? "waveform" : "pause.circle")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("原文 · English").font(.caption2).foregroundStyle(.secondary)
                 Text(useWhisper ? (store.entries.first?.original ?? "撳咪高峰開始字幕") : (speech.liveText.isEmpty ? (store.entries.first?.original ?? "撳咪高峰開始字幕") : speech.liveText))
@@ -232,15 +232,15 @@ struct ContentView: View {
             NavigationStack {
                 Form {
                     Section("辨識及翻譯") {
-                        Toggle("使用原生 Whisper（Core ML）", isOn: $useWhisper)
+                        Toggle("Whisper 高準確度模式（約 8 秒分段）", isOn: $useWhisper)
                             .onChange(of: useWhisper) { _, _ in
                                 nativeWhisper.stop()
                                 speech.stop()
                             }
                         Text("Whisper tiny 首次使用需要下載模型；之後本機運算。")
-                        Text("Apple Speech 仍可作備用辨識。")
+                        Text("預設為 Apple Speech 本地即時辨識：講話時持續顯示未完成嘅英文字幕。Whisper 分段模式較慢，適合準確度優先。")
                         Text("翻譯：Apple Translation（首次可能需要下載語言套件）")
-                        Text("Whisper 透過 WhisperKit / Apple Core ML 執行；目前以約 8 秒音訊分段轉錄。")
+                        Text("Whisper 透過 WhisperKit / Apple Core ML 執行；目前以約 8 秒音訊分段轉錄。兩種模式暫未同時運行。")
                     }
                     Section("本機紀錄") {
                         Text("字幕只保存在本機。")
