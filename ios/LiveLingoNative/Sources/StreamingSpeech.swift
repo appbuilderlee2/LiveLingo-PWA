@@ -1,5 +1,5 @@
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 import Speech
 
 /// iOS 26+ streaming recognizer. Interim text is never written to permanent history.
@@ -26,7 +26,7 @@ final class StreamingSpeech: ObservableObject {
         guard mic else { errorMessage = "請允許咪高峰權限"; return }
         do {
             let requested = Locale(identifier: "en-AU")
-            guard let locale = SpeechTranscriber.supportedLocale(equivalentTo: requested) else {
+            guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requested) else {
                 errorMessage = "SpeechTranscriber 暫時不支援英文語言模型"
                 return
             }
@@ -37,7 +37,9 @@ final class StreamingSpeech: ObservableObject {
             if let install = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
                 try await install.downloadAndInstall()
             }
-            let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
+            guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+                throw NSError(domain: "LiveLingo", code: 3, userInfo: [NSLocalizedDescriptionKey: "無法取得 SpeechAnalyzer 音訊格式"])
+            }
             self.targetFormat = format
             let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
             builder = continuation
